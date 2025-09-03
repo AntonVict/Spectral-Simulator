@@ -132,6 +132,8 @@ class PlaygroundGUI(tk.Tk):
         self.fluor_vars = []
         self.fluor_editors = []
         self.settings_visible = True
+        self.objects = []  # object layers for spatial placement
+        self.show_regions = tk.BooleanVar(value=False)
         self._build_widgets()
 
     def _build_widgets(self) -> None:
@@ -150,13 +152,18 @@ class PlaygroundGUI(tk.Tk):
         self.toggle_btn = ttk.Button(toggle_frame, text="Hide Settings", command=self._toggle_settings)
         self.toggle_btn.pack(side=tk.LEFT)
         
-        # Scrollable settings container
+        # Scrollable settings container with more width
         self.settings_container = ttk.Frame(left_frame)
         self.settings_container.pack(fill=tk.BOTH, expand=True)
         
-        canvas = tk.Canvas(self.settings_container, width=300)
+        canvas = tk.Canvas(self.settings_container, width=350)  # Increased width
         scrollbar = ttk.Scrollbar(self.settings_container, orient="vertical", command=canvas.yview)
         self.settings_frame = ttk.Frame(canvas)
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
         
         self.settings_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.create_window((0, 0), window=self.settings_frame, anchor="nw")
@@ -202,6 +209,9 @@ class PlaygroundGUI(tk.Tk):
         fl_btn_frame.pack(padx=4, pady=2)
         ttk.Button(fl_btn_frame, text="All", command=self._select_all_fluors, width=6).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(fl_btn_frame, text="None", command=self._select_no_fluors, width=6).pack(side=tk.LEFT)
+
+        # Show regions overlay toggle
+        ttk.Checkbutton(data_controls, text="Show Regions", variable=self.show_regions, command=self._render_data_view).pack(side=tk.LEFT, padx=(8,0))
         
         # Data tab figure
         self.data_figure = Figure(figsize=(10, 8), dpi=100)
@@ -241,14 +251,14 @@ class PlaygroundGUI(tk.Tk):
     def _build_settings(self) -> None:
         row = 0
         
-        # Grid settings group
+        # Grid settings group (compact)
         grid_group = ttk.LabelFrame(self.settings_frame, text="Wavelength Grid")
-        grid_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        grid_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         grid_group.columnconfigure(0, weight=1)
         row += 1
         
         grid_frame = ttk.Frame(grid_group)
-        grid_frame.pack(fill=tk.X, padx=4, pady=4)
+        grid_frame.pack(fill=tk.X, padx=2, pady=2)
         
         ttk.Label(grid_frame, text="Start").grid(row=0, column=0, sticky="w")
         ttk.Label(grid_frame, text="Stop").grid(row=0, column=1, sticky="w")
@@ -261,14 +271,14 @@ class PlaygroundGUI(tk.Tk):
         ttk.Entry(grid_frame, textvariable=self.grid_stop, width=8).grid(row=1, column=1, padx=(0,2))
         ttk.Entry(grid_frame, textvariable=self.grid_step, width=8).grid(row=1, column=2)
         
-        # Channels group
+        # Channels group (compact)
         ch_group = ttk.LabelFrame(self.settings_frame, text="Detection Channels")
-        ch_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        ch_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         ch_group.columnconfigure(0, weight=1)
         row += 1
         
         ch_frame = ttk.Frame(ch_group)
-        ch_frame.pack(fill=tk.X, padx=4, pady=4)
+        ch_frame.pack(fill=tk.X, padx=2, pady=2)
         
         ttk.Label(ch_frame, text="Count (L)").grid(row=0, column=0, sticky="w")
         ttk.Label(ch_frame, text="Bandwidth (nm)").grid(row=0, column=1, sticky="w")
@@ -278,15 +288,15 @@ class PlaygroundGUI(tk.Tk):
         ttk.Entry(ch_frame, textvariable=self.num_channels, width=8).grid(row=1, column=0, padx=(0,2))
         ttk.Entry(ch_frame, textvariable=self.bandwidth, width=12).grid(row=1, column=1)
         
-        # Fluorophores group
+        # Fluorophores group (compact)
         fluor_group = ttk.LabelFrame(self.settings_frame, text="Fluorophores")
-        fluor_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        fluor_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         fluor_group.columnconfigure(0, weight=1)
         row += 1
         
         # Fluorophore list with treeview
         fluor_main_frame = ttk.Frame(fluor_group)
-        fluor_main_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        fluor_main_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         
         # List header with controls
         list_header = ttk.Frame(fluor_main_frame)
@@ -298,18 +308,18 @@ class PlaygroundGUI(tk.Tk):
         ttk.Button(btn_frame, text="+ Add", command=self._add_fluorophore, width=8).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btn_frame, text="- Remove", command=self._remove_fluorophore, width=8).pack(side=tk.LEFT)
         
-        # Treeview for fluorophore list
+        # Treeview for fluorophore list (more compact)
         tree_frame = ttk.Frame(fluor_main_frame)
         tree_frame.pack(fill=tk.BOTH, expand=True)
         
-        self.fluor_tree = ttk.Treeview(tree_frame, columns=('model', 'params'), show='tree headings', height=6)
+        self.fluor_tree = ttk.Treeview(tree_frame, columns=('model', 'params'), show='tree headings', height=4)
         self.fluor_tree.heading('#0', text='Name', anchor='w')
         self.fluor_tree.heading('model', text='Model', anchor='w')
         self.fluor_tree.heading('params', text='Key Parameters', anchor='w')
         
-        self.fluor_tree.column('#0', width=60, minwidth=60)
-        self.fluor_tree.column('model', width=80, minwidth=80)
-        self.fluor_tree.column('params', width=120, minwidth=120)
+        self.fluor_tree.column('#0', width=50, minwidth=50)
+        self.fluor_tree.column('model', width=70, minwidth=70)
+        self.fluor_tree.column('params', width=150, minwidth=120)
         
         tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.fluor_tree.yview)
         self.fluor_tree.configure(yscrollcommand=tree_scroll.set)
@@ -335,38 +345,199 @@ class PlaygroundGUI(tk.Tk):
         self._add_fluorophore()
         self._add_fluorophore()
         
-        # Spatial group
+        # Spatial group (compact)
         spatial_group = ttk.LabelFrame(self.settings_frame, text="Spatial Field")
-        spatial_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        spatial_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         spatial_group.columnconfigure(0, weight=1)
         row += 1
         
-        spatial_frame = ttk.Frame(spatial_group)
-        spatial_frame.pack(fill=tk.X, padx=4, pady=4)
+        # Main spatial container using grid throughout
+        spatial_main = ttk.Frame(spatial_group)
+        spatial_main.pack(fill=tk.X, padx=2, pady=2)
         
-        ttk.Label(spatial_frame, text="H").grid(row=0, column=0, sticky="w")
-        ttk.Label(spatial_frame, text="W").grid(row=0, column=1, sticky="w")
-        ttk.Label(spatial_frame, text="Pixel (nm)").grid(row=0, column=2, sticky="w")
+        # Basic dimensions frame
+        dims_frame = ttk.Frame(spatial_main)
+        dims_frame.pack(fill=tk.X, pady=(0,4))
+        
+        ttk.Label(dims_frame, text="H").grid(row=0, column=0, sticky="w")
+        ttk.Label(dims_frame, text="W").grid(row=0, column=1, sticky="w")
+        ttk.Label(dims_frame, text="Pixel (nm)").grid(row=0, column=2, sticky="w")
         
         self.H = tk.IntVar(value=128)
         self.W = tk.IntVar(value=128)
         self.pixel_nm = tk.DoubleVar(value=100.0)
-        ttk.Entry(spatial_frame, textvariable=self.H, width=6).grid(row=1, column=0, padx=(0,2))
-        ttk.Entry(spatial_frame, textvariable=self.W, width=6).grid(row=1, column=1, padx=(0,2))
-        ttk.Entry(spatial_frame, textvariable=self.pixel_nm, width=8).grid(row=1, column=2)
+        ttk.Entry(dims_frame, textvariable=self.H, width=6).grid(row=1, column=0, padx=(0,2))
+        ttk.Entry(dims_frame, textvariable=self.W, width=6).grid(row=1, column=1, padx=(0,2))
+        ttk.Entry(dims_frame, textvariable=self.pixel_nm, width=8).grid(row=1, column=2)
         
-        ttk.Label(spatial_frame, text="Density (/100x100μm²)").grid(row=2, column=0, columnspan=2, sticky="w", pady=(4,0))
+        # Global field parameters (compact layout)
+        global_frame = ttk.LabelFrame(spatial_main, text="Global Field Settings")
+        global_frame.pack(fill=tk.X, pady=(4,0))
+        global_frame.columnconfigure((0,1,2), weight=1)
+        
+        # Row 0: Type, Density, Spot σ
+        ttk.Label(global_frame, text="Type:").grid(row=0, column=0, sticky="w", padx=2)
+        self.spatial_kind = tk.StringVar(value="dots")
+        kind_combo = ttk.Combobox(global_frame, textvariable=self.spatial_kind,
+                                  values=["dots", "uniform", "circles", "boxes", "gaussian_blobs", "mixed"],
+                                  state="readonly", width=10)
+        kind_combo.grid(row=1, column=0, sticky="ew", padx=2)
+        
+        ttk.Label(global_frame, text="Density (/100×100μm²):").grid(row=0, column=1, sticky="w", padx=2)
         self.density = tk.DoubleVar(value=50.0)
-        ttk.Entry(spatial_frame, textvariable=self.density, width=8).grid(row=3, column=0, pady=(2,0))
+        ttk.Entry(global_frame, textvariable=self.density, width=8).grid(row=1, column=1, sticky="ew", padx=2)
         
-        # Noise group
+        ttk.Label(global_frame, text="Spot σ (px):").grid(row=0, column=2, sticky="w", padx=2)
+        self.spot_sigma = tk.DoubleVar(value=1.2)
+        ttk.Entry(global_frame, textvariable=self.spot_sigma, width=8).grid(row=1, column=2, sticky="ew", padx=2)
+
+        # Row 1: Count, Size, Intensity
+        ttk.Label(global_frame, text="Count/fluor:").grid(row=2, column=0, sticky="w", padx=2, pady=(4,0))
+        self.count_per_fluor = tk.IntVar(value=50)
+        ttk.Entry(global_frame, textvariable=self.count_per_fluor, width=8).grid(row=3, column=0, sticky="ew", padx=2)
+
+        ttk.Label(global_frame, text="Size (px):").grid(row=2, column=1, sticky="w", padx=2, pady=(4,0))
+        self.size_px = tk.DoubleVar(value=6.0)
+        ttk.Entry(global_frame, textvariable=self.size_px, width=8).grid(row=3, column=1, sticky="ew", padx=2)
+
+        # Intensity range in one column
+        ttk.Label(global_frame, text="Intensity min-max:").grid(row=2, column=2, sticky="w", padx=2, pady=(4,0))
+        intensity_frame = ttk.Frame(global_frame)
+        intensity_frame.grid(row=3, column=2, sticky="ew", padx=2)
+        self.intensity_min = tk.DoubleVar(value=0.5)
+        self.intensity_max = tk.DoubleVar(value=1.5)
+        ttk.Entry(intensity_frame, textvariable=self.intensity_min, width=4).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        ttk.Label(intensity_frame, text="-").pack(side=tk.LEFT)
+        ttk.Entry(intensity_frame, textvariable=self.intensity_max, width=4).pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+        # Object Layers group (compact)
+        objects_group = ttk.LabelFrame(self.settings_frame, text="Object Layers")
+        objects_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
+        objects_group.columnconfigure(0, weight=1)
+        row += 1
+
+        # Quick toggle and help
+        toggle_frame = ttk.Frame(objects_group)
+        toggle_frame.pack(fill=tk.X, padx=4, pady=(4,0))
+        self.include_base_field = tk.BooleanVar(value=True)
+        ttk.Checkbutton(toggle_frame, text="Include Global Field", variable=self.include_base_field).pack(side=tk.LEFT)
+        ttk.Label(toggle_frame, text="(Place specific fluorophores in regions)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.RIGHT)
+
+        obj_main = ttk.Frame(objects_group)
+        obj_main.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
+        obj_main.columnconfigure(0, weight=1)
+
+        # Object list with improved buttons
+        list_frame = ttk.Frame(obj_main)
+        list_frame.grid(row=0, column=0, sticky="nsew", pady=(0,4))
+        list_frame.columnconfigure(0, weight=1)
+        
+        header_frame = ttk.Frame(list_frame)
+        header_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0,4))
+        header_frame.columnconfigure(0, weight=1)
+        ttk.Label(header_frame, text="Objects", font=('TkDefaultFont', 9, 'bold')).pack(side=tk.LEFT)
+        
+        btns = ttk.Frame(header_frame)
+        btns.pack(side=tk.RIGHT)
+        ttk.Button(btns, text="Add", width=6, command=self._add_object).pack(side=tk.LEFT, padx=(0,2))
+        ttk.Button(btns, text="Remove", width=6, command=self._remove_object).pack(side=tk.LEFT, padx=(0,2))
+        ttk.Button(btns, text="Copy", width=6, command=self._duplicate_object).pack(side=tk.LEFT)
+
+        # Simplified object list
+        self.obj_tree = ttk.Treeview(list_frame, columns=("fluor","kind","region","count"), show='headings', height=4)
+        for col, text, w in [("fluor","Fluor",50),("kind","Kind",80),("region","Region",80),("count","Count",50)]:
+            self.obj_tree.heading(col, text=text, anchor='w')
+            self.obj_tree.column(col, width=w, stretch=True, anchor='w')
+        self.obj_tree.grid(row=1, column=0, sticky='nsew')
+        obj_scroll = ttk.Scrollbar(list_frame, orient='vertical', command=self.obj_tree.yview)
+        self.obj_tree.configure(yscrollcommand=obj_scroll.set)
+        obj_scroll.grid(row=1, column=1, sticky='ns')
+        self.obj_tree.bind('<<TreeviewSelect>>', self._on_object_select)
+
+        # Compact editor with tabs
+        editor_notebook = ttk.Notebook(obj_main)
+        editor_notebook.grid(row=1, column=0, sticky='ew', pady=(4,0))
+        
+        # Basic properties tab
+        basic_tab = ttk.Frame(editor_notebook)
+        editor_notebook.add(basic_tab, text="Properties")
+        
+        # Row 0: Fluor and Kind
+        ttk.Label(basic_tab, text="Fluorophore:").grid(row=0, column=0, sticky='w', padx=(0,4))
+        self.obj_fluor = tk.IntVar(value=0)
+        fluor_frame = ttk.Frame(basic_tab)
+        fluor_frame.grid(row=0, column=1, sticky='w')
+        ttk.Entry(fluor_frame, textvariable=self.obj_fluor, width=4).pack(side=tk.LEFT)
+        ttk.Label(fluor_frame, text="(0-based)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT, padx=(2,0))
+        
+        ttk.Label(basic_tab, text="Kind:").grid(row=0, column=2, sticky='w', padx=(12,4))
+        self.obj_kind = tk.StringVar(value="gaussian_blobs")
+        ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12).grid(row=0, column=3, sticky='w')
+
+        # Row 1: Count and Size
+        ttk.Label(basic_tab, text="Count:").grid(row=1, column=0, sticky='w', pady=(6,0))
+        self.obj_count = tk.IntVar(value=50)
+        ttk.Entry(basic_tab, textvariable=self.obj_count, width=8).grid(row=1, column=1, sticky='w', pady=(6,0))
+        
+        ttk.Label(basic_tab, text="Size (px):").grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
+        self.obj_size = tk.DoubleVar(value=6.0)
+        ttk.Entry(basic_tab, textvariable=self.obj_size, width=8).grid(row=1, column=3, sticky='w', pady=(6,0))
+
+        # Row 2: Intensity range and spot sigma
+        ttk.Label(basic_tab, text="Intensity:").grid(row=2, column=0, sticky='w', pady=(6,0))
+        intensity_frame = ttk.Frame(basic_tab)
+        intensity_frame.grid(row=2, column=1, columnspan=2, sticky='w', pady=(6,0))
+        self.obj_i_min = tk.DoubleVar(value=0.5)
+        self.obj_i_max = tk.DoubleVar(value=1.5)
+        ttk.Entry(intensity_frame, textvariable=self.obj_i_min, width=6).pack(side=tk.LEFT)
+        ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(intensity_frame, textvariable=self.obj_i_max, width=6).pack(side=tk.LEFT)
+        
+        ttk.Label(basic_tab, text="Spot σ:").grid(row=2, column=3, sticky='w', padx=(12,4), pady=(6,0))
+        self.obj_sigma = tk.DoubleVar(value=2.0)
+        ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=8).grid(row=2, column=4, sticky='w', pady=(6,0))
+
+        # Region tab
+        region_tab = ttk.Frame(editor_notebook)
+        editor_notebook.add(region_tab, text="Region")
+        
+        ttk.Label(region_tab, text="Type:").grid(row=0, column=0, sticky='w')
+        self.obj_region_type = tk.StringVar(value="full")
+        region_combo = ttk.Combobox(region_tab, textvariable=self.obj_region_type, values=["full","rect","circle"], state='readonly', width=12)
+        region_combo.grid(row=0, column=1, sticky='w', padx=(0,8))
+        region_combo.bind('<<ComboboxSelected>>', self._on_region_type_change)
+
+        # Container for dynamic region parameters
+        self.region_params_frame = ttk.Frame(region_tab)
+        self.region_params_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(6,0))
+        
+        # Initialize variables
+        self.obj_x0 = tk.IntVar(value=0)
+        self.obj_y0 = tk.IntVar(value=0)
+        self.obj_w = tk.IntVar(value=64)
+        self.obj_h = tk.IntVar(value=64)
+        self.obj_cx = tk.DoubleVar(value=64)
+        self.obj_cy = tk.DoubleVar(value=64)
+        self.obj_r = tk.DoubleVar(value=40)
+        
+        # Initialize with full region (no parameters)
+        self._update_region_ui()
+
+        # Apply button with better styling
+        button_frame = ttk.Frame(obj_main)
+        button_frame.grid(row=2, column=0, sticky='ew', pady=(8,0))
+        self.apply_btn = ttk.Button(button_frame, text="Apply Changes", command=self._apply_object_edits, style='Accent.TButton')
+        self.apply_btn.pack(side=tk.LEFT)
+        ttk.Label(button_frame, text="Select an object above to edit", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.RIGHT)
+        
+        # Noise group (compact)
         noise_group = ttk.LabelFrame(self.settings_frame, text="Noise Model")
-        noise_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        noise_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         noise_group.columnconfigure(0, weight=1)
         row += 1
         
         noise_main_frame = ttk.Frame(noise_group)
-        noise_main_frame.pack(fill=tk.X, padx=4, pady=4)
+        noise_main_frame.pack(fill=tk.X, padx=2, pady=2)
         
         # Noise enable/disable toggle
         self.noise_enabled = tk.BooleanVar(value=True)
@@ -392,14 +563,14 @@ class PlaygroundGUI(tk.Tk):
         self.read_entry.grid(row=1, column=1, padx=(0,2))
         self.dark_entry.grid(row=1, column=2)
         
-        # Methods group
+        # Methods group (compact)
         methods_group = ttk.LabelFrame(self.settings_frame, text="Unmixing Methods")
-        methods_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        methods_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         methods_group.columnconfigure(0, weight=1)
         row += 1
         
         methods_frame = ttk.Frame(methods_group)
-        methods_frame.pack(fill=tk.X, padx=4, pady=4)
+        methods_frame.pack(fill=tk.X, padx=2, pady=2)
         
         self.use_nnls = tk.BooleanVar(value=True)
         self.use_lasso = tk.BooleanVar(value=False)
@@ -420,14 +591,14 @@ class PlaygroundGUI(tk.Tk):
         ttk.Entry(methods_frame, textvariable=self.lasso_alpha, width=8).grid(row=3, column=0, padx=(0,2))
         ttk.Entry(methods_frame, textvariable=self.nmf_iters, width=8).grid(row=3, column=1)
         
-        # Seed control only (Actions moved to bottom)
+        # Seed control (compact)
         seed_group = ttk.LabelFrame(self.settings_frame, text="Random Seed")
-        seed_group.grid(row=row, column=0, sticky="ew", padx=4, pady=2)
+        seed_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
         seed_group.columnconfigure(0, weight=1)
         row += 1
         
         seed_frame = ttk.Frame(seed_group)
-        seed_frame.pack(fill=tk.X, padx=4, pady=4)
+        seed_frame.pack(fill=tk.X, padx=2, pady=2)
         
         ttk.Label(seed_frame, text="Seed").grid(row=0, column=0, sticky="w")
         self.seed = tk.IntVar(value=123)
@@ -531,6 +702,180 @@ class PlaygroundGUI(tk.Tk):
         self.read_entry.config(state=state)
         self.dark_entry.config(state=state)
 
+    # ----- Object layer helpers -----
+    def _add_object(self):
+        # Use current image dimensions for sensible defaults
+        H, W = int(self.H.get()), int(self.W.get())
+        obj = {
+            'fluor_index': len(self.objects) % max(1, len(self.fluor_data)),  # Cycle through available fluorophores
+            'kind': 'gaussian_blobs',
+            'region': {'type': 'rect', 'x0': W//4, 'y0': H//4, 'w': W//2, 'h': H//2},  # Center quarter
+            'count': 25,
+            'size_px': max(3.0, min(W, H) / 20),  # Scale with image size
+            'intensity_min': 0.5,
+            'intensity_max': 1.5,
+            'spot_sigma': max(1.5, min(W, H) / 40),
+        }
+        self.objects.append(obj)
+        self._refresh_object_list()
+        
+        # Auto-select the new object
+        items = self.obj_tree.get_children()
+        if items:
+            self.obj_tree.selection_set(items[-1])
+            self._on_object_select()
+        
+        self._log(f"Added object {len(self.objects)}: F{obj['fluor_index']+1}, {obj['kind']}")
+
+    def _remove_object(self):
+        sel = self.obj_tree.selection()
+        if not sel:
+            if self.objects:
+                self.objects.pop()
+        else:
+            idx = self.obj_tree.index(sel[0])
+            if 0 <= idx < len(self.objects):
+                self.objects.pop(idx)
+        self._refresh_object_list()
+
+    def _duplicate_object(self):
+        sel = self.obj_tree.selection()
+        if not sel:
+            return
+        idx = self.obj_tree.index(sel[0])
+        if 0 <= idx < len(self.objects):
+            import copy
+            self.objects.append(copy.deepcopy(self.objects[idx]))
+            self._refresh_object_list()
+
+    def _refresh_object_list(self):
+        # Clear tree
+        for i in self.obj_tree.get_children():
+            self.obj_tree.delete(i)
+        # Populate with simplified format
+        for obj in self.objects:
+            fluor = obj.get('fluor_index', 0)
+            kind = obj.get('kind', '')
+            region = obj.get('region', {'type': 'full'})
+            rtxt = region.get('type', 'full')
+            if rtxt == 'rect':
+                rtxt = f"rect({region.get('w',0)}×{region.get('h',0)})"
+            elif rtxt == 'circle':
+                rtxt = f"circle(r={region.get('r',0):.0f})"
+            count = obj.get('count', 0)
+            self.obj_tree.insert('', 'end', values=(f"F{fluor+1}", kind, rtxt, count))
+        
+    def _on_object_select(self, event=None):
+        sel = self.obj_tree.selection()
+        if not sel:
+            return
+        idx = self.obj_tree.index(sel[0])
+        if not (0 <= idx < len(self.objects)):
+            return
+        obj = self.objects[idx]
+        self.obj_fluor.set(int(obj.get('fluor_index', 0)))
+        self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
+        self.obj_count.set(int(obj.get('count', 50)))
+        self.obj_size.set(float(obj.get('size_px', 6.0)))
+        self.obj_i_min.set(float(obj.get('intensity_min', 0.5)))
+        self.obj_i_max.set(float(obj.get('intensity_max', 1.5)))
+        self.obj_sigma.set(float(obj.get('spot_sigma', 2.0)))
+        region = obj.get('region', {'type': 'full'})
+        rtype = region.get('type', 'full')
+        self.obj_region_type.set(rtype)
+        self.obj_x0.set(int(region.get('x0', 0)))
+        self.obj_y0.set(int(region.get('y0', 0)))
+        self.obj_w.set(int(region.get('w', 64)))
+        self.obj_h.set(int(region.get('h', 64)))
+        self.obj_cx.set(float(region.get('cx', 64)))
+        self.obj_cy.set(float(region.get('cy', 64)))
+        self.obj_r.set(float(region.get('r', 40)))
+        
+        # Update the region UI to show correct parameters
+        self._update_region_ui()
+
+    def _apply_object_edits(self):
+        sel = self.obj_tree.selection()
+        if not sel:
+            self._log("No object selected for editing")
+            return
+        idx = self.obj_tree.index(sel[0])
+        if not (0 <= idx < len(self.objects)):
+            self._log("Invalid object selection")
+            return
+        
+        try:
+            region_type = self.obj_region_type.get()
+            region = {'type': region_type}
+            if region_type == 'rect':
+                region.update({'x0': self.obj_x0.get(), 'y0': self.obj_y0.get(), 'w': self.obj_w.get(), 'h': self.obj_h.get()})
+            elif region_type == 'circle':
+                region.update({'cx': self.obj_cx.get(), 'cy': self.obj_cy.get(), 'r': self.obj_r.get()})
+            
+            self.objects[idx] = {
+                'fluor_index': int(self.obj_fluor.get()),
+                'kind': self.obj_kind.get(),
+                'region': region,
+                'count': int(self.obj_count.get()),
+                'size_px': float(self.obj_size.get()),
+                'intensity_min': float(self.obj_i_min.get()),
+                'intensity_max': float(self.obj_i_max.get()),
+                'spot_sigma': float(self.obj_sigma.get()),
+            }
+            self._refresh_object_list()
+            
+            # Re-select the updated item and provide feedback
+            items = self.obj_tree.get_children()
+            if idx < len(items):
+                self.obj_tree.selection_set(items[idx])
+            self._log(f"Updated object {idx+1}: F{self.obj_fluor.get()+1}, {self.obj_kind.get()}, {region_type}")
+            
+        except Exception as e:
+            self._log(f"Error updating object: {str(e)}")
+
+    def _on_region_type_change(self, event=None):
+        # Update UI to show only relevant parameters
+        self._update_region_ui()
+        
+        # Visual feedback when changing region type
+        region_type = self.obj_region_type.get()
+        if region_type == "full":
+            self._log("Region set to full image")
+        elif region_type == "rect":
+            self._log("Region set to rectangle - configure x0, y0, width, height")
+        elif region_type == "circle":
+            self._log("Region set to circle - configure center and radius")
+    
+    def _update_region_ui(self):
+        # Clear existing widgets
+        for widget in self.region_params_frame.winfo_children():
+            widget.destroy()
+            
+        region_type = self.obj_region_type.get()
+        
+        if region_type == "rect":
+            # Rectangle parameters only
+            rect_frame = ttk.LabelFrame(self.region_params_frame, text="Rectangle Parameters")
+            rect_frame.pack(fill='x', pady=(6,0))
+            
+            for i, (label, var) in enumerate([("x0:", self.obj_x0), ("y0:", self.obj_y0), ("width:", self.obj_w), ("height:", self.obj_h)]):
+                ttk.Label(rect_frame, text=label).grid(row=0, column=i*2, sticky='w', padx=(0,2))
+                ttk.Entry(rect_frame, textvariable=var, width=6).grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
+                
+        elif region_type == "circle":
+            # Circle parameters only
+            circle_frame = ttk.LabelFrame(self.region_params_frame, text="Circle Parameters")
+            circle_frame.pack(fill='x', pady=(6,0))
+            
+            for i, (label, var) in enumerate([("center_x:", self.obj_cx), ("center_y:", self.obj_cy), ("radius:", self.obj_r)]):
+                ttk.Label(circle_frame, text=label).grid(row=0, column=i*2, sticky='w', padx=(0,2))
+                ttk.Entry(circle_frame, textvariable=var, width=8).grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
+                
+        else:  # "full"
+            # No parameters needed for full image
+            ttk.Label(self.region_params_frame, text="Full image - no parameters needed", 
+                     foreground="gray", font=('TkDefaultFont', 9, 'italic')).pack(pady=10)
+
     def _log(self, msg: str) -> None:
         self.output.insert(tk.END, msg + "\n")
         self.output.see(tk.END)
@@ -568,7 +913,36 @@ class PlaygroundGUI(tk.Tk):
             px_nm = float(self.pixel_nm.get())
             field = FieldSpec(shape=(H, W), pixel_size_nm=px_nm)
             af = AbundanceField(rng)
-            A = af.sample(K=K, field=field, kind="dots", density_per_100x100_um2=float(self.density.get()), spot_profile={"kind": "gaussian", "sigma_px": 1.2})
+            # Build base/global field if enabled
+            base_A = None
+            if self.include_base_field.get():
+                kind = self.spatial_kind.get()
+                if kind == "dots":
+                    base_A = af.sample(
+                        K=K,
+                        field=field,
+                        kind="dots",
+                        density_per_100x100_um2=float(self.density.get()),
+                        spot_profile={"kind": "gaussian", "sigma_px": float(self.spot_sigma.get())},
+                    )
+                elif kind == "uniform":
+                    base_A = af.sample(K=K, field=field, kind="uniform")
+                else:
+                    base_A = af.sample(
+                        K=K,
+                        field=field,
+                        kind=kind,
+                        count_per_fluor=int(self.count_per_fluor.get()),
+                        size_px=float(self.size_px.get()),
+                        intensity_min=float(self.intensity_min.get()),
+                        intensity_max=float(self.intensity_max.get()),
+                    )
+
+            # If objects exist, build from objects (with optional base)
+            if len(self.objects) > 0:
+                A = af.build_from_objects(K=K, field=field, objects=self.objects, base=base_A)
+            else:
+                A = base_A if base_A is not None else af.sample(K=K, field=field, kind="uniform")
 
             bg = BackgroundModel(rng)
             noise = NoiseModel(rng)
@@ -732,6 +1106,38 @@ class PlaygroundGUI(tk.Tk):
         ax_img.set_title("Composite Image (Selected Channels)", fontsize=12)
         ax_img.axis("off")
 
+        # Optional region overlay for objects
+        if self.show_regions.get() and len(self.objects) > 0 and self.current_field is not None:
+            H, W = self.current_field.shape
+            overlay = np.zeros((H, W, 3), dtype=np.float32)
+            # Cycle colors
+            colors = [np.array([1.0,0.0,0.0]), np.array([0.0,1.0,0.0]), np.array([0.0,0.0,1.0]), np.array([1.0,1.0,0.0])]
+            color_idx = 0
+            for obj in self.objects:
+                col = colors[color_idx % len(colors)]
+                color_idx += 1
+                region = obj.get('region', {'type': 'full'})
+                rtype = region.get('type','full')
+                if rtype == 'rect':
+                    x0 = int(max(0, region.get('x0', 0)))
+                    y0 = int(max(0, region.get('y0', 0)))
+                    w = int(max(1, region.get('w', W)))
+                    h = int(max(1, region.get('h', H)))
+                    x1 = min(W, x0 + w)
+                    y1 = min(H, y0 + h)
+                    overlay[y0:y1, x0:x1, :] += col * 0.15
+                elif rtype == 'circle':
+                    cx = float(region.get('cx', W/2))
+                    cy = float(region.get('cy', H/2))
+                    r = float(region.get('r', min(H,W)/3))
+                    yy, xx = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
+                    mask = ((yy - cy) ** 2 + (xx - cx) ** 2) <= (r ** 2)
+                    overlay[mask] += col * 0.15
+                elif rtype == 'full':
+                    overlay[:, :, :] += col * 0.05
+            overlay = np.clip(overlay, 0.0, 1.0)
+            ax_img.imshow(np.clip(rgb + overlay, 0.0, 1.0))
+
         # Spectral panel (better organized)
         ax_spec = self.data_figure.add_subplot(2, 2, 3)
         start = float(self.grid_start.get())
@@ -754,25 +1160,55 @@ class PlaygroundGUI(tk.Tk):
             else:
                 ax_spec.axvspan(low, high, ymin=0, ymax=0.15, facecolor='lightgray', alpha=0.3, edgecolor='gray')
                 
-        # Overlay fluor PDFs and total mix
-        if self.current_A is not None:
+                 # Overlay fluor PDFs and measured total signal
+        if self.current_A is not None and self.current_M is not None:
             K = self.current_A.shape[0]
-            sum_A = np.sum(self.current_A, axis=1)
-            total = np.zeros_like(self.current_spectral.lambdas, dtype=np.float32)
             
+            # Show individual fluorophore spectral profiles (theoretical)
             for k in range(K):
                 show = k in active_fl
-                pdf = self.current_spectral._pdf(self.current_spectral.fluors[k])
-                total += pdf * float(sum_A[k])
                 if show:
+                    pdf = self.current_spectral._pdf(self.current_spectral.fluors[k])
+                    # Normalize PDF for display
+                    pdf_norm = pdf / (np.max(pdf) + 1e-9)
                     peak_nm = float(self.current_spectral.lambdas[np.argmax(pdf)])
                     col = self._wavelength_to_rgb_nm(peak_nm)
-                    ax_spec.plot(self.current_spectral.lambdas, 0.2 + 0.6 * pdf / (np.max(pdf) + 1e-9), 
-                               color=col, linewidth=2, label=f"F{k+1}", alpha=0.8)
+                    ax_spec.plot(self.current_spectral.lambdas, 0.2 + 0.6 * pdf_norm, 
+                               color=col, linewidth=2, label=f"F{k+1} (theory)", alpha=0.8)
             
-            if np.max(total) > 0:
-                ax_spec.plot(self.current_spectral.lambdas, 0.2 + 0.6 * total / np.max(total), 
-                           color='black', linewidth=3, label='Total Signal', alpha=0.9)
+            # Calculate and show actual measured total signal as a continuous curve
+            # Sum the measured intensities across all pixels for each channel
+            total_per_channel = np.sum(self.current_Y, axis=1)  # Shape: (L,)
+
+            channel_centers = np.array([ch.center_nm for ch in self.current_spectral.channels])
+            
+            # Interpolate the discrete channel totals across the wavelength grid
+            # Then smooth with a small Gaussian for visual continuity
+            if len(channel_centers) >= 2:
+                # Interpolate
+                interp = np.interp(self.current_spectral.lambdas, channel_centers, total_per_channel, 
+                                   left=total_per_channel[0], right=total_per_channel[-1])
+            else:
+                interp = np.full_like(self.current_spectral.lambdas, total_per_channel[0] if len(total_per_channel) > 0 else 0.0)
+
+            # Simple smoothing via moving average over ~5 nm window
+            lambdas = self.current_spectral.lambdas
+            if len(lambdas) > 3:
+                # choose window based on grid step
+                step_nm = max(1.0, float(np.median(np.diff(lambdas))))
+                window = max(3, int(round(5.0 / step_nm)) | 1)  # odd
+                kernel = np.ones(window, dtype=np.float32)
+                kernel /= np.sum(kernel)
+                interp_smooth = np.convolve(interp, kernel, mode='same')
+            else:
+                interp_smooth = interp
+
+            # Normalize for display and plot
+            if np.max(interp_smooth) > 0:
+                curve = 0.2 + 0.6 * (interp_smooth / np.max(interp_smooth))
+                ax_spec.plot(self.current_spectral.lambdas, curve, color='black', linewidth=2.5, label='Measured Total (cont.)', alpha=0.9)
+            else:
+                ax_spec.plot(self.current_spectral.lambdas, np.zeros_like(self.current_spectral.lambdas) + 0.2, color='black', linewidth=2.5, label='Measured Total (cont.)', alpha=0.9)
                            
             ax_spec.legend(loc='upper right', fontsize=8, framealpha=0.8)
 
