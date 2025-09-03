@@ -35,14 +35,14 @@ class ObjectLayersManager:
         self.obj_r = tk.DoubleVar(value=40)
         
         self._build_ui()
+        self._add_preset_objects()
         
     def _build_ui(self):
         """Build the object layers management UI."""
-        # Quick toggle and help
-        toggle_frame = ttk.Frame(self.parent_frame)
-        toggle_frame.pack(fill=tk.X, padx=4, pady=(4,0))
-        ttk.Checkbutton(toggle_frame, text="Include Global Field", variable=self.include_base_field).pack(side=tk.LEFT)
-        ttk.Label(toggle_frame, text="(Place specific fluorophores in regions)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.RIGHT)
+        # Help text only
+        help_frame = ttk.Frame(self.parent_frame)
+        help_frame.pack(fill=tk.X, padx=4, pady=(4,0))
+        ttk.Label(help_frame, text="Place specific fluorophores in regions", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT)
 
         obj_main = ttk.Frame(self.parent_frame)
         obj_main.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
@@ -146,7 +146,7 @@ class ObjectLayersManager:
         obj = {
             'fluor_index': len(self.objects) % max(1, 3),  # Cycle through 3 fluorophores by default
             'kind': 'gaussian_blobs',
-            'region': {'type': 'rect', 'x0': W//4, 'y0': H//4, 'w': W//2, 'h': H//2},  # Center quarter
+            'region': {'type': 'full'},  # Default to full/global region
             'count': 25,
             'size_px': max(3.0, min(W, H) / 20),  # Scale with image size
             'intensity_min': 0.5,
@@ -328,3 +328,54 @@ class ObjectLayersManager:
     def should_include_base_field(self):
         """Check if base field should be included."""
         return self.include_base_field.get()
+        
+    def _add_preset_objects(self):
+        """Add 3 preset objects, one for each default fluorophore."""
+        H, W = self.get_image_dims()
+        
+        # Preset objects with different characteristics for each fluorophore
+        presets = [
+            {
+                'fluor_index': 0,
+                'kind': 'gaussian_blobs',
+                'region': {'type': 'full'},
+                'count': 30,
+                'size_px': 4.0,
+                'intensity_min': 0.8,
+                'intensity_max': 1.2,
+                'spot_sigma': 2.0,
+            },
+            {
+                'fluor_index': 1,
+                'kind': 'circles',
+                'region': {'type': 'full'},
+                'count': 20,
+                'size_px': 6.0,
+                'intensity_min': 0.6,
+                'intensity_max': 1.0,
+                'spot_sigma': 1.5,
+            },
+            {
+                'fluor_index': 2,
+                'kind': 'dots',
+                'region': {'type': 'full'},
+                'count': 40,
+                'size_px': 3.0,
+                'intensity_min': 0.4,
+                'intensity_max': 0.8,
+                'spot_sigma': 1.0,
+            }
+        ]
+        
+        # Add preset objects
+        for preset in presets:
+            self.objects.append(preset)
+            
+        # Refresh the list to show the presets
+        self._refresh_object_list()
+        
+        # Auto-select the first object
+        items = self.obj_tree.get_children()
+        if items:
+            self.obj_tree.selection_set(items[0])
+            self._on_object_select()

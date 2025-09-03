@@ -62,11 +62,11 @@ class FluorophoreEditor(ttk.Frame):
         """Handle model selection change."""
         self.data['model'] = self.model_var.get()
         self._build_params()
-        self._update_data()
+        # Don't auto-update anymore
         
     def _on_param_change(self, event=None):
         """Handle parameter value change."""
-        self._update_data()
+        # Don't auto-update anymore - require explicit apply
             
     def _build_params(self):
         """Build parameter input fields based on selected model."""
@@ -102,13 +102,19 @@ class FluorophoreEditor(ttk.Frame):
         entry.grid(row=row, column=1, padx=2, pady=1)
         entry.bind('<KeyRelease>', self._on_param_change)
         
-    def _update_data(self):
-        """Update internal data and notify parent."""
+    def apply_changes(self):
+        """Apply changes to the fluorophore data and notify parent."""
         self.data['model'] = self.model_var.get()
         self.data['brightness'] = self.brightness_var.get()
         self.data['params'] = {k: v.get() for k, v in self.param_vars.items()}
         if self.on_update:
             self.on_update(self.fluor_idx, self.data)
+    
+    def _update_data(self):
+        """Legacy method - now just updates internal data without notifying parent."""
+        self.data['model'] = self.model_var.get()
+        self.data['brightness'] = self.brightness_var.get()
+        self.data['params'] = {k: v.get() for k, v in self.param_vars.items()}
         
     def get_fluorophore(self):
         """Get a Fluorophore object from current data."""
@@ -170,6 +176,14 @@ class FluorophoreListManager:
         
         self.fluor_editor_frame = ttk.Frame(self.parent_frame, relief='groove', borderwidth=2)
         self.fluor_editor_frame.pack(fill=tk.X, pady=2)
+        
+        # Apply button for fluorophore changes
+        apply_frame = ttk.Frame(self.parent_frame)
+        apply_frame.pack(fill=tk.X, pady=(4,0))
+        
+        self.apply_btn = ttk.Button(apply_frame, text="Apply Changes", command=self._apply_fluor_changes)
+        self.apply_btn.pack(side=tk.LEFT)
+        ttk.Label(apply_frame, text="Select a fluorophore above to edit", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.RIGHT)
         
         # Initialize with 3 fluorophores
         self.add_fluorophore()
@@ -261,6 +275,17 @@ class FluorophoreListManager:
         # Create new editor for selected fluorophore
         self.current_editor = FluorophoreEditor(self.fluor_editor_frame, idx, self._on_fluor_update, self.fluor_data[idx])
         self.current_editor.pack(fill=tk.X, padx=4, pady=4)
+            
+    def _apply_fluor_changes(self):
+        """Apply changes to the currently selected fluorophore."""
+        if self.current_editor:
+            try:
+                self.current_editor.apply_changes()
+                self.log("Applied fluorophore changes successfully")
+            except Exception as e:
+                self.log(f"Error applying fluorophore changes: {str(e)}")
+        else:
+            self.log("No fluorophore selected for editing")
             
     def _on_fluor_update(self, idx, data):
         """Handle fluorophore data update."""
