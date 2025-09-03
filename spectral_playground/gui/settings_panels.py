@@ -66,98 +66,6 @@ class DetectionChannelsPanel:
         }
 
 
-class SpatialFieldPanel:
-    """Panel for spatial field settings."""
-    
-    def __init__(self, parent_frame):
-        self.parent_frame = parent_frame
-        
-        # Basic dimensions
-        self.H = tk.IntVar(value=128)
-        self.W = tk.IntVar(value=128)
-        self.pixel_nm = tk.DoubleVar(value=100.0)
-        
-        # Global field settings
-        self.spatial_kind = tk.StringVar(value="dots")
-        self.density = tk.DoubleVar(value=50.0)
-        self.spot_sigma = tk.DoubleVar(value=1.2)
-        self.count_per_fluor = tk.IntVar(value=50)
-        self.size_px = tk.DoubleVar(value=6.0)
-        self.intensity_min = tk.DoubleVar(value=0.5)
-        self.intensity_max = tk.DoubleVar(value=1.5)
-        
-        self._build_ui()
-        
-    def _build_ui(self):
-        """Build the spatial field UI."""
-        # Main spatial container using grid throughout
-        spatial_main = ttk.Frame(self.parent_frame)
-        spatial_main.pack(fill=tk.X, padx=2, pady=2)
-        
-        # Basic dimensions frame
-        dims_frame = ttk.Frame(spatial_main)
-        dims_frame.pack(fill=tk.X, pady=(0,4))
-        
-        ttk.Label(dims_frame, text="H").grid(row=0, column=0, sticky="w")
-        ttk.Label(dims_frame, text="W").grid(row=0, column=1, sticky="w")
-        ttk.Label(dims_frame, text="Pixel (nm)").grid(row=0, column=2, sticky="w")
-        
-        ttk.Entry(dims_frame, textvariable=self.H, width=6).grid(row=1, column=0, padx=(0,2))
-        ttk.Entry(dims_frame, textvariable=self.W, width=6).grid(row=1, column=1, padx=(0,2))
-        ttk.Entry(dims_frame, textvariable=self.pixel_nm, width=8).grid(row=1, column=2)
-        
-        # Global field parameters (compact layout)
-        global_frame = ttk.LabelFrame(spatial_main, text="Global Field Settings")
-        global_frame.pack(fill=tk.X, pady=(4,0))
-        global_frame.columnconfigure((0,1,2), weight=1)
-        
-        # Row 0: Type, Density, Spot σ
-        ttk.Label(global_frame, text="Type:").grid(row=0, column=0, sticky="w", padx=2)
-        kind_combo = ttk.Combobox(global_frame, textvariable=self.spatial_kind,
-                                  values=["dots", "uniform", "circles", "boxes", "gaussian_blobs", "mixed"],
-                                  state="readonly", width=10)
-        kind_combo.grid(row=1, column=0, sticky="ew", padx=2)
-        
-        ttk.Label(global_frame, text="Density (/100×100μm²):").grid(row=0, column=1, sticky="w", padx=2)
-        ttk.Entry(global_frame, textvariable=self.density, width=8).grid(row=1, column=1, sticky="ew", padx=2)
-        
-        ttk.Label(global_frame, text="Spot σ (px):").grid(row=0, column=2, sticky="w", padx=2)
-        ttk.Entry(global_frame, textvariable=self.spot_sigma, width=8).grid(row=1, column=2, sticky="ew", padx=2)
-
-        # Row 1: Count, Size, Intensity
-        ttk.Label(global_frame, text="Count/fluor:").grid(row=2, column=0, sticky="w", padx=2, pady=(4,0))
-        ttk.Entry(global_frame, textvariable=self.count_per_fluor, width=8).grid(row=3, column=0, sticky="ew", padx=2)
-
-        ttk.Label(global_frame, text="Size (px):").grid(row=2, column=1, sticky="w", padx=2, pady=(4,0))
-        ttk.Entry(global_frame, textvariable=self.size_px, width=8).grid(row=3, column=1, sticky="ew", padx=2)
-
-        # Intensity range in one column
-        ttk.Label(global_frame, text="Intensity min-max:").grid(row=2, column=2, sticky="w", padx=2, pady=(4,0))
-        intensity_frame = ttk.Frame(global_frame)
-        intensity_frame.grid(row=3, column=2, sticky="ew", padx=2)
-        ttk.Entry(intensity_frame, textvariable=self.intensity_min, width=4).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        ttk.Label(intensity_frame, text="-").pack(side=tk.LEFT)
-        ttk.Entry(intensity_frame, textvariable=self.intensity_max, width=4).pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-    def get_spatial_config(self):
-        """Get spatial field configuration."""
-        return {
-            'dimensions': {
-                'H': int(self.H.get()),
-                'W': int(self.W.get()),
-                'pixel_nm': float(self.pixel_nm.get())
-            },
-            'global_field': {
-                'kind': self.spatial_kind.get(),
-                'density': float(self.density.get()),
-                'spot_sigma': float(self.spot_sigma.get()),
-                'count_per_fluor': int(self.count_per_fluor.get()),
-                'size_px': float(self.size_px.get()),
-                'intensity_min': float(self.intensity_min.get()),
-                'intensity_max': float(self.intensity_max.get())
-            }
-        }
-
 
 class NoiseModelPanel:
     """Panel for noise model settings."""
@@ -166,7 +74,7 @@ class NoiseModelPanel:
         self.parent_frame = parent_frame
         self.on_noise_toggle = on_noise_toggle_callback
         
-        self.noise_enabled = tk.BooleanVar(value=True)
+        self.noise_enabled = tk.BooleanVar(value=False)
         self.gain = tk.DoubleVar(value=1.0)
         self.read_sigma = tk.DoubleVar(value=1.0)
         self.dark_rate = tk.DoubleVar(value=0.0)
@@ -197,6 +105,9 @@ class NoiseModelPanel:
         self.gain_entry.grid(row=1, column=0, padx=(0,2))
         self.read_entry.grid(row=1, column=1, padx=(0,2))
         self.dark_entry.grid(row=1, column=2)
+        
+        # Set initial state based on noise_enabled
+        self._on_noise_toggle()
         
     def _on_noise_toggle(self):
         """Handle noise toggle."""
@@ -284,3 +195,38 @@ class RandomSeedPanel:
     def get_seed(self):
         """Get random seed."""
         return int(self.seed.get())
+
+
+class ImageDimensionsPanel:
+    """Panel for basic image dimensions settings."""
+    
+    def __init__(self, parent_frame):
+        self.parent_frame = parent_frame
+        
+        # Basic dimensions only
+        self.H = tk.IntVar(value=128)
+        self.W = tk.IntVar(value=128)
+        self.pixel_nm = tk.DoubleVar(value=100.0)
+        
+        self._build_ui()
+        
+    def _build_ui(self):
+        """Build the image dimensions UI."""
+        dims_frame = ttk.Frame(self.parent_frame)
+        dims_frame.pack(fill=tk.X, padx=2, pady=2)
+        
+        ttk.Label(dims_frame, text="H").grid(row=0, column=0, sticky="w")
+        ttk.Label(dims_frame, text="W").grid(row=0, column=1, sticky="w")
+        ttk.Label(dims_frame, text="Pixel (nm)").grid(row=0, column=2, sticky="w")
+        
+        ttk.Entry(dims_frame, textvariable=self.H, width=6).grid(row=1, column=0, padx=(0,2))
+        ttk.Entry(dims_frame, textvariable=self.W, width=6).grid(row=1, column=1, padx=(0,2))
+        ttk.Entry(dims_frame, textvariable=self.pixel_nm, width=8).grid(row=1, column=2)
+        
+    def get_dimensions(self):
+        """Get image dimensions."""
+        return {
+            'H': int(self.H.get()),
+            'W': int(self.W.get()),
+            'pixel_nm': float(self.pixel_nm.get())
+        }

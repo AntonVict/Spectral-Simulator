@@ -21,7 +21,7 @@ from spectral_playground.experiments.registry import make_unmixer
 from .fluorophore_editor import FluorophoreListManager
 from .object_layers import ObjectLayersManager
 from .settings_panels import (
-    WavelengthGridPanel, DetectionChannelsPanel, SpatialFieldPanel,
+    WavelengthGridPanel, DetectionChannelsPanel, ImageDimensionsPanel,
     NoiseModelPanel, UnmixingMethodsPanel, RandomSeedPanel
 )
 
@@ -44,7 +44,6 @@ class PlaygroundGUI(tk.Tk):
         self.channel_vars = []
         self.fluor_vars = []
         self.settings_visible = True
-        self.show_regions = tk.BooleanVar(value=False)
         
         # Initialize components
         self.settings_panels = {}
@@ -76,12 +75,18 @@ class PlaygroundGUI(tk.Tk):
         self.toggle_btn = ttk.Button(toggle_frame, text="Hide Settings", command=self._toggle_settings)
         self.toggle_btn.pack(side=tk.LEFT)
         
-        # Scrollable settings container with more width
+        # Scrollable settings container with proper layout
         self.settings_container = ttk.Frame(left_frame)
         self.settings_container.pack(fill=tk.BOTH, expand=True)
         
-        canvas = tk.Canvas(self.settings_container, width=350)  # Increased width
-        scrollbar = ttk.Scrollbar(self.settings_container, orient="vertical", command=canvas.yview)
+        # Create a frame to hold canvas and scrollbar side by side
+        scroll_frame = ttk.Frame(self.settings_container)
+        scroll_frame.pack(fill=tk.BOTH, expand=True)
+        scroll_frame.grid_columnconfigure(0, weight=1)
+        scroll_frame.grid_rowconfigure(0, weight=1)
+        
+        canvas = tk.Canvas(scroll_frame, width=330)  # Slightly reduced to leave room for scrollbar
+        scrollbar = ttk.Scrollbar(scroll_frame, orient="vertical", command=canvas.yview)
         self.settings_frame = ttk.Frame(canvas)
         
         # Enable mouse wheel scrolling
@@ -93,8 +98,9 @@ class PlaygroundGUI(tk.Tk):
         canvas.create_window((0, 0), window=self.settings_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        # Use grid to prevent overlap
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
         
         self._build_settings()
 
@@ -136,8 +142,7 @@ class PlaygroundGUI(tk.Tk):
         ttk.Button(fl_btn_frame, text="All", command=self._select_all_fluors, width=6).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(fl_btn_frame, text="None", command=self._select_no_fluors, width=6).pack(side=tk.LEFT)
 
-        # Show regions overlay toggle
-        ttk.Checkbutton(data_controls, text="Show Regions", variable=self.show_regions, command=self._render_data_view).pack(side=tk.LEFT, padx=(8,0))
+
         
         # Data tab figure
         self.data_figure = Figure(figsize=(10, 8), dpi=100)
@@ -203,11 +208,11 @@ class PlaygroundGUI(tk.Tk):
         self.fluor_manager = FluorophoreListManager(fluor_main_frame, self._log)
         row += 1
         
-        # Spatial Field
-        spatial_group = ttk.LabelFrame(self.settings_frame, text="Spatial Field")
-        spatial_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
-        spatial_group.columnconfigure(0, weight=1)
-        self.settings_panels['spatial'] = SpatialFieldPanel(spatial_group)
+        # Image Dimensions
+        dims_group = ttk.LabelFrame(self.settings_frame, text="Image Dimensions")
+        dims_group.grid(row=row, column=0, sticky="ew", padx=2, pady=1)
+        dims_group.columnconfigure(0, weight=1)
+        self.settings_panels['dimensions'] = ImageDimensionsPanel(dims_group)
         row += 1
         
         # Object Layers
@@ -240,8 +245,7 @@ class PlaygroundGUI(tk.Tk):
 
     def _get_image_dims(self):
         """Get current image dimensions."""
-        spatial_config = self.settings_panels['spatial'].get_spatial_config()
-        dims = spatial_config['dimensions']
+        dims = self.settings_panels['dimensions'].get_dimensions()
         return dims['H'], dims['W']
 
     def _log(self, msg: str) -> None:
@@ -269,7 +273,7 @@ class PlaygroundGUI(tk.Tk):
             
             grid_config = self.settings_panels['grid'].get_wavelength_grid()
             ch_config = self.settings_panels['channels'].get_channel_config()
-            spatial_config = self.settings_panels['spatial'].get_spatial_config()
+            dims_config = self.settings_panels['dimensions'].get_dimensions()
             noise_config = self.settings_panels['noise'].get_noise_config()
             
             # Build wavelength grid
@@ -299,36 +303,22 @@ class PlaygroundGUI(tk.Tk):
             M = spectral.build_M()
 
             # Build field
-            dims = spatial_config['dimensions']
-            H, W = dims['H'], dims['W']
-            px_nm = dims['pixel_nm']
+            H, W = dims_config['H'], dims_config['W']
+            px_nm = dims_config['pixel_nm']
             field = FieldSpec(shape=(H, W), pixel_size_nm=px_nm)
             
             # Generate abundance field
             af = AbundanceField(rng)
             
-            # Build base/global field if enabled
+            # Build base/global field if enabled (simple default)
             base_A = None
             if self.object_manager.should_include_base_field():
-                global_field = spatial_config['global_field']
-                kind = global_field['kind']
-                
-                if kind == "dots":
-                    base_A = af.sample(
-                        K=K, field=field, kind="dots",
-                        density_per_100x100_um2=global_field['density'],
-                        spot_profile={"kind": "gaussian", "sigma_px": global_field['spot_sigma']},
-                    )
-                elif kind == "uniform":
-                    base_A = af.sample(K=K, field=field, kind="uniform")
-                else:
-                    base_A = af.sample(
-                        K=K, field=field, kind=kind,
-                        count_per_fluor=global_field['count_per_fluor'],
-                        size_px=global_field['size_px'],
-                        intensity_min=global_field['intensity_min'],
-                        intensity_max=global_field['intensity_max'],
-                    )
+                # Use a simple default dots pattern for global field
+                base_A = af.sample(
+                    K=K, field=field, kind="dots",
+                    density_per_100x100_um2=50.0,
+                    spot_profile={"kind": "gaussian", "sigma_px": 1.2},
+                )
 
             # If objects exist, build from objects (with optional base)
             objects = self.object_manager.get_objects()
@@ -500,36 +490,7 @@ class PlaygroundGUI(tk.Tk):
         ax_img.set_title("Composite Image (Selected Channels)", fontsize=12)
         ax_img.axis("off")
 
-        # Optional region overlay for objects
-        if self.show_regions.get() and len(self.object_manager.get_objects()) > 0:
-            overlay = np.zeros((H, W, 3), dtype=np.float32)
-            # Cycle colors
-            colors = [np.array([1.0,0.0,0.0]), np.array([0.0,1.0,0.0]), np.array([0.0,0.0,1.0]), np.array([1.0,1.0,0.0])]
-            color_idx = 0
-            for obj in self.object_manager.get_objects():
-                col = colors[color_idx % len(colors)]
-                color_idx += 1
-                region = obj.get('region', {'type': 'full'})
-                rtype = region.get('type','full')
-                if rtype == 'rect':
-                    x0 = int(max(0, region.get('x0', 0)))
-                    y0 = int(max(0, region.get('y0', 0)))
-                    w = int(max(1, region.get('w', W)))
-                    h = int(max(1, region.get('h', H)))
-                    x1 = min(W, x0 + w)
-                    y1 = min(H, y0 + h)
-                    overlay[y0:y1, x0:x1, :] += col * 0.15
-                elif rtype == 'circle':
-                    cx = float(region.get('cx', W/2))
-                    cy = float(region.get('cy', H/2))
-                    r = float(region.get('r', min(H,W)/3))
-                    yy, xx = np.meshgrid(np.arange(H), np.arange(W), indexing='ij')
-                    mask = ((yy - cy) ** 2 + (xx - cx) ** 2) <= (r ** 2)
-                    overlay[mask] += col * 0.15
-                elif rtype == 'full':
-                    overlay[:, :, :] += col * 0.05
-            overlay = np.clip(overlay, 0.0, 1.0)
-            ax_img.imshow(np.clip(rgb + overlay, 0.0, 1.0))
+
 
         # Spectral panel
         self._render_spectral_panel(active_ch, active_fl)
