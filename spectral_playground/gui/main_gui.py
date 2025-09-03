@@ -5,6 +5,9 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+from tkinter import filedialog
+import os
+from pathlib import Path
 
 import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
@@ -17,6 +20,8 @@ from spectral_playground.core.noise import NoiseModel
 from spectral_playground.core.simulate import ForwardConfig, ForwardModel
 from spectral_playground.eval.metrics import rmse, sam
 from spectral_playground.experiments.registry import make_unmixer
+from spectral_playground.data.image_io import SpectralImageIO
+from spectral_playground.data.dataset import SynthDataset
 
 from .fluorophore_editor import FluorophoreListManager
 from .object_layers import ObjectLayersManager
@@ -45,12 +50,71 @@ class PlaygroundGUI(tk.Tk):
         self.spectral_fluor_vars = []  # For spectral profile visibility
         self.settings_visible = True
         
+        # Setup save/load directory
+        self.save_load_dir = self._setup_save_load_directory()
+        
         # Initialize components
         self.settings_panels = {}
         self.fluor_manager = None
         self.object_manager = None
         
         self._build_widgets()
+        
+        # Show welcome message after widgets are built
+        self.after(100, self._show_startup_message)
+
+    def _show_startup_message(self) -> None:
+        """Show startup message with save directory info."""
+        self._log("=== Spectral Unmixing Playground ===")
+        self._log(f"Save directory: {os.path.relpath(self.save_load_dir, os.getcwd())}")
+        self._log("Ready to generate and analyze spectral data!")
+        self._log("")
+
+    def _setup_save_load_directory(self) -> str:
+        """Setup and return the default save/load directory path."""
+        # Create save directory relative to current working directory
+        save_dir = os.path.join(os.getcwd(), "saved_data")
+        
+        # Create subdirectories for different types of saves
+        subdirs = ["datasets", "images", "plots", "exports"]
+        
+        try:
+            for subdir in subdirs:
+                full_path = os.path.join(save_dir, subdir)
+                os.makedirs(full_path, exist_ok=True)
+        except Exception as e:
+            # Fallback to current directory if creation fails
+            self._log(f"Warning: Could not create save directory structure: {str(e)}")
+            return os.getcwd()
+        
+        return save_dir
+
+    def _get_default_save_path(self, save_type: str, filename: str = "") -> str:
+        """Get default save path for a given save type.
+        
+        Args:
+            save_type: One of 'datasets', 'images', 'plots', 'exports'
+            filename: Optional default filename
+            
+        Returns:
+            Full path for saving
+        """
+        subdir_map = {
+            'datasets': 'datasets',
+            'images': 'images', 
+            'plots': 'plots',
+            'exports': 'exports'
+        }
+        
+        subdir = subdir_map.get(save_type, '')
+        if subdir:
+            path = os.path.join(self.save_load_dir, subdir)
+        else:
+            path = self.save_load_dir
+            
+        if filename:
+            return os.path.join(path, filename)
+        return path
 
     def _build_widgets(self) -> None:
         """Build the main widget layout."""
@@ -243,6 +307,29 @@ class PlaygroundGUI(tk.Tk):
         
         ttk.Button(actions_section, text="Generate Data", command=self.on_generate, width=12).pack(pady=2)
         ttk.Button(actions_section, text="Run Unmix", command=self.on_unmix, width=12).pack(pady=2)
+        
+        # Separator
+        ttk.Separator(actions_section, orient="horizontal").pack(fill=tk.X, pady=4)
+        
+        # Save/Load section
+        save_load_frame = ttk.Frame(actions_section)
+        save_load_frame.pack(fill=tk.X, pady=2)
+        
+        # Save dropdown menu
+        self.save_var = tk.StringVar(value="Save...")
+        save_menu = ttk.OptionMenu(save_load_frame, self.save_var, "Save...",
+                                  "Save Composite (PNG)", "Save Composite (JPG)", 
+                                  "Save Full Dataset", "Save All Plots",
+                                  command=self._on_save_selection)
+        save_menu.config(width=10)
+        save_menu.pack(side=tk.LEFT, padx=(0,2))
+        
+        ttk.Button(save_load_frame, text="Load Dataset", command=self.on_load_dataset, width=10).pack(side=tk.RIGHT)
+        
+        # Directory access section
+        dir_frame = ttk.Frame(actions_section)
+        dir_frame.pack(fill=tk.X, pady=2)
+        ttk.Button(dir_frame, text="📁 Open Save Folder", command=self._open_save_directory, width=15).pack()
         
         # Channel visibility section
         ch_section = ttk.LabelFrame(controls_frame, text="Channel Visibility")
@@ -445,6 +532,286 @@ class PlaygroundGUI(tk.Tk):
                             btn.config(text="Hide Terminal")
                             break
             self.terminal_visible.set(True)
+
+    def _on_save_selection(self, selection: str) -> None:
+        """Handle save menu selection."""
+        # Reset the dropdown to default
+        self.save_var.set("Save...")
+        
+        if selection == "Save Composite (PNG)":
+            self._save_composite_image("PNG")
+        elif selection == "Save Composite (JPG)":
+            self._save_composite_image("JPEG")
+        elif selection == "Save Full Dataset":
+            self._save_full_dataset()
+        elif selection == "Save All Plots":
+            self._save_all_plots()
+
+    def _save_composite_image(self, format: str) -> None:
+        """Save the current composite image."""
+        if self.current_Y is None:
+            messagebox.showwarning("Warning", "No data to save. Generate data first.")
+            return
+        
+        # Get file extension and generate default filename
+        ext = "png" if format == "PNG" else "jpg"
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_filename = f"composite_{timestamp}.{ext}"
+        default_path = self._get_default_save_path('images', default_filename)
+        
+        # Open save dialog
+        filepath = filedialog.asksaveasfilename(
+            title=f"Save Composite Image as {format}",
+            initialdir=self._get_default_save_path('images'),
+            initialfile=default_filename,
+            defaultextension=f".{ext}",
+            filetypes=[(f"{format} files", f"*.{ext}"), ("All files", "*.*")]
+        )
+        
+        if not filepath:
+            return
+        
+        try:
+            # Generate RGB composite (same logic as in _render_data_view)
+            H, W = self.current_field.shape
+            active_ch = [i for i, v in enumerate(self.channel_vars) if v.get()]
+            
+            rgb = np.zeros((H, W, 3), dtype=np.float32)
+            eps = 1e-6
+            for i in active_ch:
+                img = self.current_Y[i].reshape(H, W)
+                img = img / (np.percentile(img, 99.0) + eps)
+                img = np.clip(img, 0.0, 1.0)
+                nm = self.current_spectral.channels[i].center_nm
+                color = np.array(self._wavelength_to_rgb_nm(nm), dtype=np.float32)
+                rgb += img[..., None] * color[None, None, :]
+            rgb = np.clip(rgb, 0.0, 1.0)
+            
+            # Save using SpectralImageIO
+            SpectralImageIO.save_composite_image(rgb, filepath, format)
+            
+            # Show relative path if in save directory
+            rel_path = os.path.relpath(filepath, self.save_load_dir) if filepath.startswith(self.save_load_dir) else filepath
+            self._log(f"Saved composite image: {rel_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save image: {str(e)}")
+            self._log(f"Error saving image: {str(e)}")
+
+    def _save_full_dataset(self) -> None:
+        """Save the complete dataset with all spectral data."""
+        if self.current_Y is None:
+            messagebox.showwarning("Warning", "No data to save. Generate data first.")
+            return
+        
+        # Generate default filename with metadata
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        L, K = self.current_Y.shape[0], self.current_A.shape[0]
+        H, W = self.current_field.shape
+        default_filename = f"dataset_L{L}K{K}_{H}x{W}_{timestamp}.npz"
+        
+        # Open save dialog
+        filepath = filedialog.asksaveasfilename(
+            title="Save Full Dataset",
+            initialdir=self._get_default_save_path('datasets'),
+            initialfile=default_filename,
+            defaultextension=".npz",
+            filetypes=[("NumPy archive", "*.npz"), ("All files", "*.*")]
+        )
+        
+        if not filepath:
+            return
+        
+        try:
+            # Create dataset object
+            dataset = SynthDataset(
+                Y=self.current_Y,
+                A=self.current_A,
+                B=self.current_B,
+                M=self.current_M,
+                S=None,  # We don't use S in current implementation
+                meta={}
+            )
+            
+            # Save using SpectralImageIO
+            SpectralImageIO.save_full_dataset(
+                dataset, self.current_spectral, self.current_field, filepath
+            )
+            
+            # Show relative path if in save directory
+            rel_path = os.path.relpath(filepath, self.save_load_dir) if filepath.startswith(self.save_load_dir) else filepath
+            self._log(f"Saved full dataset: {rel_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save dataset: {str(e)}")
+            self._log(f"Error saving dataset: {str(e)}")
+
+    def _save_all_plots(self) -> None:
+        """Save all current plots as separate image files."""
+        if self.current_Y is None:
+            messagebox.showwarning("Warning", "No data to save. Generate data first.")
+            return
+        
+        # Generate default directory name
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_dir_name = f"plots_export_{timestamp}"
+        default_export_path = self._get_default_save_path('exports', default_dir_name)
+        
+        # Select output directory
+        output_dir = filedialog.askdirectory(
+            title="Select Directory for Plot Images",
+            initialdir=self._get_default_save_path('exports')
+        )
+        
+        if not output_dir:
+            return
+        
+        try:
+            # Save composite image
+            H, W = self.current_field.shape
+            active_ch = [i for i, v in enumerate(self.channel_vars) if v.get()]
+            
+            rgb = np.zeros((H, W, 3), dtype=np.float32)
+            eps = 1e-6
+            for i in active_ch:
+                img = self.current_Y[i].reshape(H, W)
+                img = img / (np.percentile(img, 99.0) + eps)
+                img = np.clip(img, 0.0, 1.0)
+                nm = self.current_spectral.channels[i].center_nm
+                color = np.array(self._wavelength_to_rgb_nm(nm), dtype=np.float32)
+                rgb += img[..., None] * color[None, None, :]
+            rgb = np.clip(rgb, 0.0, 1.0)
+            
+            composite_path = os.path.join(output_dir, "composite_image.png")
+            SpectralImageIO.save_composite_image(rgb, composite_path, "PNG")
+            
+            # Save spectral plot
+            spectral_path = os.path.join(output_dir, "spectral_profiles.png")
+            SpectralImageIO.save_plot_as_image(self.spectral_figure, spectral_path)
+            
+            # Save abundance plot
+            abundance_path = os.path.join(output_dir, "abundance_maps.png")
+            SpectralImageIO.save_plot_as_image(self.abundance_figure, abundance_path)
+            
+            # Save individual abundance maps
+            SpectralImageIO.export_abundance_maps(
+                self.current_A, (H, W), output_dir, "abundance_individual"
+            )
+            
+            # Show relative path if in save directory
+            rel_path = os.path.relpath(output_dir, self.save_load_dir) if output_dir.startswith(self.save_load_dir) else output_dir
+            self._log(f"Saved all plots to: {rel_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save plots: {str(e)}")
+            self._log(f"Error saving plots: {str(e)}")
+
+    def on_load_dataset(self) -> None:
+        """Load a previously saved dataset."""
+        # Open load dialog
+        filepath = filedialog.askopenfilename(
+            title="Load Dataset",
+            initialdir=self._get_default_save_path('datasets'),
+            filetypes=[("NumPy archive", "*.npz"), ("All files", "*.*")]
+        )
+        
+        if not filepath:
+            return
+        
+        try:
+            # Load using SpectralImageIO
+            dataset, spectral_system, field_spec = SpectralImageIO.load_full_dataset(filepath)
+            
+            # Update GUI state
+            self.current_Y = dataset.Y
+            self.current_A = dataset.A
+            self.current_B = dataset.B
+            self.current_M = dataset.M
+            self.current_field = field_spec
+            self.current_spectral = spectral_system
+            
+            # Update GUI components to match loaded data
+            L = dataset.Y.shape[0]
+            K = dataset.A.shape[0]
+            
+            # Update settings panels to reflect loaded data
+            self._update_settings_from_loaded_data(spectral_system, field_spec)
+            
+            # Update fluorophore manager
+            self.fluor_manager.set_fluorophores(spectral_system.fluors)
+            
+            # Build toggles and render data view
+            self._populate_channel_toggles(L)
+            self._populate_fluor_dropdown(K)
+            self._populate_spectral_fluor_toggles(K)
+            self._render_data_view()
+            
+            # Show relative path if in save directory
+            rel_path = os.path.relpath(filepath, self.save_load_dir) if filepath.startswith(self.save_load_dir) else filepath
+            self._log(f"Loaded dataset: {rel_path} (L={L}, K={K})")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load dataset: {str(e)}")
+            self._log(f"Error loading dataset: {str(e)}")
+
+    def _update_settings_from_loaded_data(self, spectral_system: SpectralSystem, field_spec: FieldSpec) -> None:
+        """Update settings panels to reflect loaded data."""
+        try:
+            # Update wavelength grid
+            lambdas = spectral_system.lambdas
+            if len(lambdas) > 1:
+                step = float(np.median(np.diff(lambdas)))
+                self.settings_panels['grid'].grid_start.set(float(lambdas[0]))
+                self.settings_panels['grid'].grid_stop.set(float(lambdas[-1]))
+                self.settings_panels['grid'].grid_step.set(step)
+            
+            # Update channel settings
+            L = len(spectral_system.channels)
+            if L > 0:
+                bw = spectral_system.channels[0].bandwidth_nm
+                self.settings_panels['channels'].num_channels.set(L)
+                self.settings_panels['channels'].bandwidth.set(bw)
+            
+            # Update dimensions
+            H, W = field_spec.shape
+            self.settings_panels['dimensions'].H.set(H)
+            self.settings_panels['dimensions'].W.set(W)
+            self.settings_panels['dimensions'].pixel_nm.set(field_spec.pixel_size_nm)
+            
+        except Exception as e:
+            self._log(f"Warning: Could not update all settings from loaded data: {str(e)}")
+
+    def _open_save_directory(self) -> None:
+        """Open the save directory in the system file explorer."""
+        try:
+            import subprocess
+            import sys
+            
+            if sys.platform.startswith('win'):
+                # Windows
+                subprocess.run(['explorer', self.save_load_dir])
+            elif sys.platform.startswith('darwin'):
+                # macOS
+                subprocess.run(['open', self.save_load_dir])
+            else:
+                # Linux and others
+                subprocess.run(['xdg-open', self.save_load_dir])
+                
+            self._log(f"Opened save directory: {self.save_load_dir}")
+            
+        except Exception as e:
+            self._log(f"Could not open save directory: {str(e)}")
+            # Fallback: show directory path
+            messagebox.showinfo("Save Directory", 
+                              f"Save directory location:\n{self.save_load_dir}\n\n"
+                              f"Subdirectories:\n"
+                              f"• datasets/ - Full spectral datasets (.npz)\n"
+                              f"• images/ - Composite images (.png, .jpg)\n"
+                              f"• plots/ - Individual plots and figures\n"
+                              f"• exports/ - Bulk exports and analysis")
 
     def on_generate(self) -> None:
         """Generate synthetic data based on current settings."""

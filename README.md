@@ -29,7 +29,7 @@ GUI
   - `python -m spectral_playground.gui.app` (wrapper)
   - `python spectral_playground/gui/app.py` (direct script)
   - Configure grid/channels/fluors/spatial/noise, select methods, then click Run.
-  - Features: Dynamic fluorophore editor, object placement layers, continuous spectral plots, noise toggle
+  - Features: Dynamic fluorophore editor, object placement layers, continuous spectral plots, noise toggle, comprehensive save/load system, advanced navigation (zoom/pan/scroll)
 
 Notes
 -----

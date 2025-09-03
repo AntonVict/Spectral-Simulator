@@ -307,3 +307,28 @@ class FluorophoreListManager:
             )
             for data in self.fluor_data
         ]
+    
+    def set_fluorophores(self, fluorophores: list):
+        """Set fluorophores from a list of Fluorophore objects."""
+        self.fluor_data = []
+        for fl in fluorophores:
+            # Ensure params is a dictionary and can be copied safely
+            if isinstance(fl.params, dict):
+                params_copy = fl.params.copy()
+            else:
+                # Convert non-dict params to dict if needed
+                params_copy = {'value': fl.params} if fl.params is not None else {}
+                
+            self.fluor_data.append({
+                'name': fl.name,
+                'model': fl.model,
+                'brightness': fl.brightness,
+                'params': params_copy
+            })
+        self._update_fluor_list()
+        if self.fluor_data:
+            # Select the first fluorophore by default
+            first_item = f'fluor_0'
+            if self.fluor_tree.exists(first_item):
+                self.fluor_tree.selection_set(first_item)
+                self._on_fluor_select()
