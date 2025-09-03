@@ -24,9 +24,12 @@ Testing
 GUI
 ---
 
-- Launch the GUI:
-  - `python -m spectral_playground.gui.app`
+- Launch the GUI (multiple ways):
+  - `python -m spectral_playground.gui.main_gui` (preferred)
+  - `python -m spectral_playground.gui.app` (wrapper)
+  - `python spectral_playground/gui/app.py` (direct script)
   - Configure grid/channels/fluors/spatial/noise, select methods, then click Run.
+  - Features: Dynamic fluorophore editor, object placement layers, continuous spectral plots, noise toggle
 
 Notes
 -----
