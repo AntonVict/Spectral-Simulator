@@ -100,7 +100,7 @@ class SpectralImageIO:
                     } for fl in spectral_system.fluors
                 ],
                 'format_version': '1.0',
-                'description': 'Spectral unmixing playground dataset'
+                'description': 'Spectral visualization playground dataset'
             }
             save_data['metadata'] = metadata
         

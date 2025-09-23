@@ -1,1 +1,15 @@
 /.spectral-venv
+__pycache__/
+*.py[cod]
+*$py.class
+
+/spectral_playground.egg-info
+
+/saved_data/datasets/*
+!/saved_data/datasets/.gitkeep
+/saved_data/exports/*
+!/saved_data/exports/.gitkeep
+/saved_data/images/*
+!/saved_data/images/.gitkeep
+/saved_data/plots/*
+!/saved_data/plots/.gitkeep

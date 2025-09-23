@@ -1,7 +1,7 @@
 [project]
 name = "spectral_playground"
-version = "0.1.0"
-description = "Spectral Unmixing Playground — synthesis and unmixing algorithms"
+version = "0.2.0"
+description = "Spectral Visualization Playground"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [
@@ -10,25 +10,19 @@ authors = [
 dependencies = [
   "numpy>=1.24",
   "scipy>=1.10",
-  "scikit-learn>=1.2",
-  "PyYAML>=6.0",
-  "typer>=0.9",
   "matplotlib>=3.6"
 ]
 
 [project.optional-dependencies]
 dev = [
-  "pytest>=7.0",
-  "hypothesis>=6.0"
+  "pytest>=7.0"
 ]
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["spectral_playground*"]
 exclude = ["config*"]
-

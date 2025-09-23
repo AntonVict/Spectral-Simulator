@@ -1,14 +1,10 @@
-"""Spectral Unmixing Playground package."""
+"""Spectral Visualization Playground package."""
 
 __all__ = [
     "core",
     "data",
-    "unmix",
-    "eval",
     "vis",
-    "experiments",
+    "gui",
 ]
 
-__version__ = "0.1.0"
-
-
+__version__ = "0.2.0"

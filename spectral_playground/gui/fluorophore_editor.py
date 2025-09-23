@@ -1,4 +1,4 @@
-"""Fluorophore editor component for the spectral unmixing playground GUI."""
+"""Fluorophore editor component for the spectral visualization GUI."""
 
 from __future__ import annotations
 

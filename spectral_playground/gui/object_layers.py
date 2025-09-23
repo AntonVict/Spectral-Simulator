@@ -1,4 +1,4 @@
-"""Object layers manager for the spectral unmixing playground GUI."""
+"""Object layers manager for the spectral visualization GUI."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ class ObjectLayersManager:
         self.include_base_field = tk.BooleanVar(value=True)
         
         # Object editor variables
-        self.obj_fluor = tk.IntVar(value=0)
+        self.obj_fluor = tk.IntVar(value=1)  # 1-indexed for user display
         self.obj_kind = tk.StringVar(value="gaussian_blobs")
         self.obj_count = tk.IntVar(value=50)
         self.obj_size = tk.DoubleVar(value=6.0)
@@ -98,8 +98,8 @@ class ObjectLayersManager:
         ttk.Label(basic_tab, text="Fluorophore:").grid(row=0, column=0, sticky='w', padx=(0,4))
         fluor_frame = ttk.Frame(basic_tab)
         fluor_frame.grid(row=0, column=1, sticky='w')
-        ttk.Entry(fluor_frame, textvariable=self.obj_fluor, width=4).pack(side=tk.LEFT)
-        ttk.Label(fluor_frame, text="(0-based)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT, padx=(2,0))
+        ttk.Spinbox(fluor_frame, textvariable=self.obj_fluor, from_=1, to=10, width=4, increment=1).pack(side=tk.LEFT)
+        ttk.Label(fluor_frame, text="(F1, F2, ...)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT, padx=(2,0))
         
         ttk.Label(basic_tab, text="Kind:").grid(row=0, column=2, sticky='w', padx=(12,4))
         ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12).grid(row=0, column=3, sticky='w')
@@ -215,7 +215,7 @@ class ObjectLayersManager:
         obj = self.objects[idx]
         
         # Update UI with selected object data
-        self.obj_fluor.set(int(obj.get('fluor_index', 0)))
+        self.obj_fluor.set(int(obj.get('fluor_index', 0)) + 1)  # Convert from 0-indexed to 1-indexed for display
         self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
         self.obj_count.set(int(obj.get('count', 50)))
         self.obj_size.set(float(obj.get('size_px', 6.0)))
@@ -256,7 +256,7 @@ class ObjectLayersManager:
                 region.update({'cx': self.obj_cx.get(), 'cy': self.obj_cy.get(), 'r': self.obj_r.get()})
             
             self.objects[idx] = {
-                'fluor_index': int(self.obj_fluor.get()),
+                'fluor_index': int(self.obj_fluor.get()) - 1,  # Convert from 1-indexed to 0-indexed
                 'kind': self.obj_kind.get(),
                 'region': region,
                 'count': int(self.obj_count.get()),
@@ -271,7 +271,7 @@ class ObjectLayersManager:
             items = self.obj_tree.get_children()
             if idx < len(items):
                 self.obj_tree.selection_set(items[idx])
-            self.log(f"Updated object {idx+1}: F{self.obj_fluor.get()+1}, {self.obj_kind.get()}, {region_type}")
+            self.log(f"Updated object {idx+1}: F{self.obj_fluor.get()}, {self.obj_kind.get()}, {region_type}")
             
         except Exception as e:
             self.log(f"Error updating object: {str(e)}")
