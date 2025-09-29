@@ -8,7 +8,6 @@ import numpy as np
 from .spectra import SpectralSystem
 from .spatial import FieldSpec
 from .background import BackgroundModel
-from .noise import NoiseModel
 
 
 Array = np.ndarray
@@ -27,13 +26,11 @@ class ForwardModel:
         spectral: SpectralSystem,
         field: FieldSpec,
         bg: BackgroundModel,
-        noise: NoiseModel,
         cfg: ForwardConfig,
     ) -> None:
         self.spectral = spectral
         self.field = field
         self.bg = bg
-        self.noise = noise
         self.cfg = cfg
         self.M = spectral.build_M()
 
@@ -44,7 +41,6 @@ class ForwardModel:
         B: Optional[Array] = None,
         S: Optional[Array] = None,
         psf: Optional[object] = None,
-        noise_params: Optional[dict] = None,
     ) -> Array:
         """Return Y of shape (L, P). Handles MVP forward model Y = M A + B + N.
 
@@ -61,10 +57,6 @@ class ForwardModel:
 
         Y_clean = (self.M @ A).astype(np.float32) + B.astype(np.float32)
 
-        nparams = dict(kind="poisson_gaussian", gain=1.0, read_sigma=0.0, dark_rate=0.0)
-        if noise_params:
-            nparams.update(noise_params)
-        Y = self.noise.apply(Y_clean, **nparams)
-        return Y.astype(np.float32)
+        return Y_clean.astype(np.float32)
 
 

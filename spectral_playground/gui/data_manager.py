@@ -9,7 +9,6 @@ import numpy as np
 from spectral_playground.core.spectra import SpectralSystem, Channel, Fluorophore
 from spectral_playground.core.spatial import FieldSpec, AbundanceField
 from spectral_playground.core.background import BackgroundModel
-from spectral_playground.core.noise import NoiseModel
 from spectral_playground.core.simulate import ForwardConfig, ForwardModel
 from spectral_playground.data.image_io import SpectralImageIO
 from spectral_playground.data.dataset import SynthDataset
@@ -23,7 +22,6 @@ class GenerationConfig:
     grid: Dict[str, float]
     channels: Dict[str, float]
     dimensions: Dict[str, float]
-    noise: Dict[str, Any]
 
 
 def generate_dataset(
@@ -71,26 +69,16 @@ def generate_dataset(
         A = af.sample(K=len(fluors), field=field, kind='uniform')
 
     bg = BackgroundModel(rng)
-    noise_model = NoiseModel(rng)
     forward = ForwardModel(
         spectral=spectral,
         field=field,
         bg=bg,
-        noise=noise_model,
         cfg=ForwardConfig(),
     )
 
     B = bg.sample(M.shape[0], H, W, kind='constant', level=0.0)
-    if cfg.noise.get('enabled', False):
-        noise_params = {
-            'gain': float(cfg.noise.get('gain', 1.0)),
-            'read_sigma': float(cfg.noise.get('read_sigma', 0.0)),
-            'dark_rate': float(cfg.noise.get('dark_rate', 0.0)),
-        }
-    else:
-        noise_params = {'gain': 1.0, 'read_sigma': 0.0, 'dark_rate': 0.0}
 
-    Y = forward.synthesize(A, B=B, noise_params=noise_params)
+    Y = forward.synthesize(A, B=B)
 
     data = PlaygroundData(
         Y=Y,
@@ -99,7 +87,7 @@ def generate_dataset(
         M=M,
         spectral=spectral,
         field=field,
-        metadata={'noise_params': noise_params, 'seed': cfg.seed},
+        metadata={'seed': cfg.seed},
     )
     return data
 

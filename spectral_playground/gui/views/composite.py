@@ -15,15 +15,23 @@ class CompositeView:
     """Matplotlib-backed view for the composite image display."""
 
     def __init__(self, parent: tk.Widget) -> None:
-        self.figure = Figure(figsize=(10, 8), dpi=100)
-        self.figure.subplots_adjust(left=0.02, right=0.98, top=0.92, bottom=0.08)
+        # Make the figure size more modest to fit better
+        self.figure = Figure(figsize=(8, 6), dpi=100)
+        self.figure.subplots_adjust(left=0.02, right=0.98, top=0.94, bottom=0.06)
+        
+        # Create canvas
         self.canvas = FigureCanvasTkAgg(self.figure, master=parent)
         self.canvas_widget = self.canvas.get_tk_widget()
         # Use grid to match parent's geometry manager
         self.canvas_widget.grid(row=1, column=0, sticky=tk.NSEW)
+        
+        # Configure parent grid weights to ensure proper expansion
+        parent.rowconfigure(1, weight=1)
+        parent.columnconfigure(0, weight=1)
 
+        # Create toolbar at bottom with proper frame
         toolbar_frame = tk.Frame(parent)
-        toolbar_frame.grid(row=2, column=0, sticky=tk.EW)
+        toolbar_frame.grid(row=2, column=0, sticky=tk.EW, pady=(2, 0))
         self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
         self.toolbar.update()
 
@@ -64,7 +72,7 @@ class CompositeView:
         self._rgb_cache = rgb
 
         ax = self.figure.add_subplot(1, 1, 1)
-        ax.imshow(rgb)
+        ax.imshow(rgb, aspect='equal')
         ax.set_title('Composite Image', fontsize=14)
         ax.axis('off')
 
@@ -77,14 +85,23 @@ class CompositeView:
         window.title('Composite Image (Expanded)')
         window.geometry('1200x900')
 
-        figure = Figure(figsize=(14, 10), dpi=100)
+        # Create main frame for better layout control
+        main_frame = tk.Frame(window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        figure = Figure(figsize=(12, 8), dpi=100)
         figure.subplots_adjust(left=0.01, right=0.99, top=0.95, bottom=0.05)
-        canvas = FigureCanvasTkAgg(figure, master=window)
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        NavigationToolbar2Tk(canvas, window).update()
+        canvas = FigureCanvasTkAgg(figure, master=main_frame)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Create toolbar at bottom
+        toolbar_frame = tk.Frame(main_frame)
+        toolbar_frame.pack(fill=tk.X, pady=(5, 0))
+        toolbar = NavigationToolbar2Tk(canvas, toolbar_frame)
+        toolbar.update()
 
         ax = figure.add_subplot(1, 1, 1)
-        ax.imshow(self._rgb_cache)
+        ax.imshow(self._rgb_cache, aspect='equal')
         ax.set_title('Composite Image (Expanded View)', fontsize=16)
         ax.axis('off')
 

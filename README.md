@@ -1,45 +1,166 @@
-Spectral Visualization Playground (Python)
-=============================================
+Spectral Visualization Playground
+==================================
 
-Interactive playground for synthesising and exploring multispectral fluorescence datasets. The focus is on rapid iteration of spectral configurations and intuitive visual analysis, without bundled unmixing algorithms.
+A desktop application for synthesizing and exploring synthetic multispectral fluorescence datasets. It is intended for prototyping spectral imaging configurations and visual analysis.
 
-Features
---------
+## Core Features
 
-- **Spectral Simulation**: Configure wavelength grids, detection channels, fluorophore models, and noise to generate synthetic datasets in seconds.
-- **Rich Visualization**: Inspect composite images, per-channel responses, spectral profiles, and abundance maps with responsive matplotlib panels.
-- **Flexible Object Layouts**: Place objects (dots, circles, boxes, Gaussian blobs) to craft spatial distributions for each fluorophore.
-- **Data Management**: Save and load datasets (`.npz`), export publication-ready plots, and keep assets organised under `saved_data/`.
+### Spectral System Design
+- **Wavelength Grid Configuration**: Define custom wavelength ranges (e.g., 400-700nm) with configurable step sizes
+- **Detection Channel Setup**: Configure multiple detection channels with center wavelengths and bandwidths
+- **Advanced Fluorophore Models**: Support for multiple spectral profile models:
+  - Gaussian (mean, standard deviation)
+  - Skewed normal (mean, std, skewness)
+  - Log-normal (log-scale parameters)
+  - Weibull (shape, scale, shift)
+  - Mixture models and empirical data
 
-Quick Start
------------
+### Spatial Object Placement
+- **Interactive Object Editor**: Visual management of fluorophore spatial distributions
+- **Multiple Object Types**: 
+  - Gaussian blobs (configurable sigma)
+  - Filled circles and squares
+  - Point sources (dots)
+- **Region-Based Placement**: Restrict objects to specific areas:
+  - Full image coverage
+  - Rectangular regions (x, y, width, height)
+  - Circular regions (center, radius)
+- **Per-Fluorophore Control**: Independent spatial patterns for each fluorophore
 
+### Real-Time Visualization
+- **Composite RGB Rendering**: Wavelength-to-color mapping for intuitive viewing
+- **Interactive Spectral Plots**: 
+  - Fluorophore emission profiles
+  - Channel response functions
+  - Measured signal overlay
+- **Individual Abundance Maps**: Per-fluorophore spatial distributions with colormap visualization
+- **Expandable Views**: Full-screen modes for detailed inspection
+
+### Simulation Controls
+- **Background Models**: Constant or low-rank structured backgrounds
+- **Image Dimensions**: Configurable field size and pixel resolution
+- **Reproducible Results**: Seed-based random number generation
+
+### Data Management
+- **Full Dataset Export**: Complete spectral data saved as compressed `.npz` files with metadata
+- **Composite Image Export**: High-resolution PNG/JPEG images for presentations
+- **Plot Export**: Matplotlib figures saved in multiple formats (PNG, PDF, SVG)
+- **Batch Processing**: Export all views and individual abundance maps simultaneously
+
+## Installation
+
+### Prerequisites
+- Python 3.9 or later
+- Required packages: numpy, scipy, matplotlib, tkinter (usually included with Python)
+
+### Install from Source
+```bash
+git clone <repository-url>
+cd spectral_playground
+pip install -e .
+```
+
+## Quick Start
+
+### Launch the Application
 ```bash
 python -m spectral_playground.gui.main_gui
 ```
 
-Installation
-------------
+### Basic Workflow
+1. **Configure Spectral System** (left sidebar):
+   - Set wavelength grid (start, stop, step)
+   - Define detection channels (count, bandwidth)
+   - Design fluorophore spectral profiles
 
-```bash
-pip install -e .
+2. **Design Spatial Layout**:
+   - Use object layers manager to place fluorophores
+   - Configure object types, counts, and regions
+   - Apply changes to update the spatial distribution
+
+3. **Generate and Visualize**:
+   - Click "Generate Data" to synthesize the dataset
+   - View composite image, spectral profiles, and abundance maps
+   - Toggle channels and fluorophores for comparison
+
+4. **Export Results**:
+   - Save complete datasets for further analysis
+   - Export publication-ready images and plots
+   - Organize outputs in the `saved_data/` directory
+
+## Application Architecture
+
+### Core Simulation Engine (`spectral_playground/core/`)
+- `spectra.py` - Spectral system modeling and fluorophore definitions
+- `spatial.py` - Spatial object placement and abundance field generation
+- `simulate.py` - Forward model implementation (Y = MA + B + N)
+- `background.py` - Background signal modeling
+- `noise.py` - Noise model implementation
+
+### Data Management (`spectral_playground/data/`)
+- `dataset.py` - Core data structures for synthetic datasets
+- `image_io.py` - Comprehensive I/O for images, datasets, and plots
+- `io.py` - Low-level file operations
+
+### GUI Framework (`spectral_playground/gui/`)
+- `main_gui.py` - Main application window and coordination
+- `sidebar.py` - Configuration panels and controls
+- `viewer.py` - Central visualization panel
+- `bottom_panel.py` - Spectral plots and abundance views
+- `views/` - Specialized visualization components
+- `object_layers.py` - Spatial object management interface
+- `fluorophore_editor.py` - Spectral profile configuration
+
+### Visualization (`spectral_playground/vis/`)
+- `plots.py` - Plotting utilities and figure generation
+
+## File Organization
+
+The application automatically creates a `saved_data/` directory structure:
+
+```
+saved_data/
+├── datasets/          # Complete spectral datasets (.npz files)
+├── images/           # Composite RGB renderings (.png, .jpg)
+├── plots/            # Individual plot exports (.png, .pdf, .svg)
+└── exports/          # Batch export collections
 ```
 
-Workflow
---------
+## Advanced Usage
 
-1. Configure the spectral system (wavelength grid, channels, fluorophores).
-2. Design spatial layouts with the object layers sidebar.
-3. Generate data to view composite imagery and spectra instantly.
-4. Save datasets or export plots for downstream analysis.
+### Custom Fluorophore Models
+The application supports sophisticated spectral models beyond simple Gaussians:
+- **Skewed Normal**: For asymmetric emission profiles
+- **Log-Normal**: For naturally skewed biological fluorophores  
+- **Weibull**: For flexible peak shapes with tunable asymmetry
+- **Mixture Models**: Combine multiple peaks for complex spectra
 
-File Organization
------------------
+### Spatial Pattern Design
+Create realistic spatial distributions by combining:
+- Multiple object types per fluorophore
+- Region-based constraints (cellular compartments, tissue regions)
+- Intensity variation controls for biological realism
+- Scalable object sizes and densities
 
-Generated assets live under `saved_data/`:
+### Background Modeling
+Simulate background structure using:
+- Constant per-channel offsets
+- Low-rank spatial patterns generated from random factors
 
-- `datasets/` — Full spectral datasets (`.npz`).
-- `images/` — Composite renderings (`.png`, `.jpg`).
-- `plots/` — Spectral and abundance figures.
-- `exports/` — Batch exports created via the GUI.
+## Technical Details
+
+- **Forward Model**: Implements Y = MA + B + N where:
+  - Y: Measured spectral data (L×P)
+  - M: System matrix (L×K) 
+  - A: Abundance maps (K×P)
+  - B: Background (L×P)
+  - N: Noise
+- **Numerical Integration**: Spectral overlap computed via trapezoidal rule
+- **Memory Efficient**: Streaming operations for large datasets
+- **Cross-Platform**: Pure Python with standard scientific libraries
+
+## Version Information
+- Current Version: 0.2.0
+- Python Requirements: ≥3.9
+- Key Dependencies: numpy≥1.24, scipy≥1.10, matplotlib≥3.6
 

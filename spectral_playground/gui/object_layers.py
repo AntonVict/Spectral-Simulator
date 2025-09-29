@@ -102,7 +102,9 @@ class ObjectLayersManager:
         ttk.Label(fluor_frame, text="(F1, F2, ...)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT, padx=(2,0))
         
         ttk.Label(basic_tab, text="Kind:").grid(row=0, column=2, sticky='w', padx=(12,4))
-        ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12).grid(row=0, column=3, sticky='w')
+        self.kind_combo = ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12)
+        self.kind_combo.grid(row=0, column=3, sticky='w')
+        self.kind_combo.bind('<<ComboboxSelected>>', self._on_kind_change)
 
         # Row 1: Count and Size
         ttk.Label(basic_tab, text="Count:").grid(row=1, column=0, sticky='w', pady=(6,0))
@@ -111,16 +113,23 @@ class ObjectLayersManager:
         ttk.Label(basic_tab, text="Size (px):").grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
         ttk.Entry(basic_tab, textvariable=self.obj_size, width=8).grid(row=1, column=3, sticky='w', pady=(6,0))
 
-        # Row 2: Intensity range and spot sigma
+        # Row 2: Intensity range
         ttk.Label(basic_tab, text="Intensity:").grid(row=2, column=0, sticky='w', pady=(6,0))
         intensity_frame = ttk.Frame(basic_tab)
-        intensity_frame.grid(row=2, column=1, columnspan=2, sticky='w', pady=(6,0))
+        intensity_frame.grid(row=2, column=1, columnspan=3, sticky='w', pady=(6,0))
         ttk.Entry(intensity_frame, textvariable=self.obj_i_min, width=6).pack(side=tk.LEFT)
         ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
         ttk.Entry(intensity_frame, textvariable=self.obj_i_max, width=6).pack(side=tk.LEFT)
         
-        ttk.Label(basic_tab, text="Spot σ:").grid(row=2, column=3, sticky='w', padx=(12,4), pady=(6,0))
-        ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=8).grid(row=2, column=4, sticky='w', pady=(6,0))
+        # Row 3: Spot sigma (for Gaussian blobs and dots)
+        self.sigma_label = ttk.Label(basic_tab, text="Spot σ (px):")
+        self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
+        sigma_frame = ttk.Frame(basic_tab)
+        sigma_frame.grid(row=3, column=1, sticky='w', pady=(6,0))
+        self.sigma_entry = ttk.Entry(sigma_frame, textvariable=self.obj_sigma, width=8)
+        self.sigma_entry.pack(side=tk.LEFT)
+        self.sigma_help = ttk.Label(sigma_frame, text="(Gaussian spread)", foreground="gray", font=('TkDefaultFont', 8))
+        self.sigma_help.pack(side=tk.LEFT, padx=(4,0))
 
     def _build_region_tab(self, notebook):
         """Build the region tab for object editing."""
@@ -235,6 +244,9 @@ class ObjectLayersManager:
         
         # Update the region UI to show correct parameters
         self._update_region_ui()
+        
+        # Update kind-specific UI elements
+        self._on_kind_change()
 
     def _apply_object_edits(self):
         """Apply edits to the selected object."""
@@ -276,6 +288,24 @@ class ObjectLayersManager:
         except Exception as e:
             self.log(f"Error updating object: {str(e)}")
 
+    def _on_kind_change(self, event=None):
+        """Handle object kind change to show/hide relevant parameters."""
+        kind = self.obj_kind.get()
+        
+        # Show sigma field only for gaussian_blobs and dots
+        if kind in ("gaussian_blobs", "dots"):
+            self.sigma_label.grid()
+            self.sigma_entry.pack()
+            self.sigma_help.pack()
+            if kind == "gaussian_blobs":
+                self.sigma_help.config(text="(Gaussian spread)")
+            else:
+                self.sigma_help.config(text="(Dot spread)")
+        else:
+            # Hide sigma controls for circles and boxes since they use size_px instead
+            self.sigma_label.grid_remove()
+            # Note: We don't pack_forget the entry/help since they're in a frame
+            
     def _on_region_type_change(self, event=None):
         """Handle region type change."""
         # Update UI to show only relevant parameters
@@ -343,7 +373,7 @@ class ObjectLayersManager:
                 'size_px': 4.0,
                 'intensity_min': 0.8,
                 'intensity_max': 1.2,
-                'spot_sigma': 2.0,
+                'spot_sigma': 3.0,  # Larger sigma for visible Gaussian blobs
             },
             {
                 'fluor_index': 1,
@@ -353,7 +383,7 @@ class ObjectLayersManager:
                 'size_px': 6.0,
                 'intensity_min': 0.6,
                 'intensity_max': 1.0,
-                'spot_sigma': 1.5,
+                'spot_sigma': 1.5,  # Not used for circles, but set for consistency
             },
             {
                 'fluor_index': 2,
@@ -363,7 +393,7 @@ class ObjectLayersManager:
                 'size_px': 3.0,
                 'intensity_min': 0.4,
                 'intensity_max': 0.8,
-                'spot_sigma': 1.0,
+                'spot_sigma': 1.5,  # Moderate sigma for dot-like appearance
             }
         ]
         

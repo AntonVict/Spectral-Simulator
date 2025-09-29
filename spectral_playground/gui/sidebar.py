@@ -14,7 +14,6 @@ from .settings_panels import (
     WavelengthGridPanel,
     DetectionChannelsPanel,
     ImageDimensionsPanel,
-    NoiseModelPanel,
     RandomSeedPanel,
 )
 
@@ -96,12 +95,6 @@ class Sidebar(ttk.Frame):
         self.object_manager = ObjectLayersManager(objects_group, log_callback, self._get_image_dims)
         row += 1
 
-        noise_group = ttk.LabelFrame(self._settings_frame, text='Noise Model')
-        noise_group.grid(row=row, column=0, sticky='ew', padx=2, pady=2)
-        noise_group.columnconfigure(0, weight=1)
-        self.panels['noise'] = NoiseModelPanel(noise_group, None)
-        row += 1
-
         seed_group = ttk.LabelFrame(self._settings_frame, text='Random Seed')
         seed_group.grid(row=row, column=0, sticky='ew', padx=2, pady=2)
         seed_group.columnconfigure(0, weight=1)
@@ -115,9 +108,8 @@ class Sidebar(ttk.Frame):
         grid = self.panels['grid'].get_wavelength_grid()
         channels = self.panels['channels'].get_channel_config()
         dimensions = self.panels['dimensions'].get_dimensions()
-        noise = self.panels['noise'].get_noise_config()
         seed = self.panels['seed'].get_seed()
-        return GenerationConfig(seed=seed, grid=grid, channels=channels, dimensions=dimensions, noise=noise)
+        return GenerationConfig(seed=seed, grid=grid, channels=channels, dimensions=dimensions)
 
     def get_fluorophores(self) -> list[Fluorophore]:
         return self.fluor_manager.get_fluorophores()

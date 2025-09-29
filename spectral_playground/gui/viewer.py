@@ -30,6 +30,7 @@ class ViewerPanel(ttk.Frame):
         self.on_channels_changed = on_channels_changed
 
         self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
         main_frame = ttk.Frame(self)
         main_frame.grid(row=0, column=0, sticky='nsew', padx=8, pady=8)
         main_frame.columnconfigure(0, weight=1)
@@ -40,6 +41,8 @@ class ViewerPanel(ttk.Frame):
         image_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 8))
         image_frame.columnconfigure(0, weight=1)
         image_frame.rowconfigure(1, weight=1)
+        # Ensure row 2 (toolbar) doesn't take extra space
+        image_frame.rowconfigure(2, weight=0)
 
         controls_frame = ttk.Frame(main_frame)
         controls_frame.grid(row=0, column=1, sticky='ns')

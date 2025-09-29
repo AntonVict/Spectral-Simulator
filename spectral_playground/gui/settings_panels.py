@@ -56,51 +56,6 @@ class DetectionChannelsPanel:
         }
 
 
-class NoiseModelPanel:
-    """Panel for noise model settings."""
-
-    def __init__(self, parent_frame, on_noise_toggle_callback):
-        self.on_noise_toggle = on_noise_toggle_callback
-        self.noise_enabled = tk.BooleanVar(value=False)
-        self.gain = tk.DoubleVar(value=1.0)
-        self.read_sigma = tk.DoubleVar(value=1.0)
-        self.dark_rate = tk.DoubleVar(value=0.0)
-        self._build_ui(parent_frame)
-
-    def _build_ui(self, parent):
-        main = ttk.Frame(parent)
-        main.pack(fill=tk.X, padx=2, pady=2)
-        ttk.Checkbutton(main, text='Enable Noise', variable=self.noise_enabled, command=self._on_noise_toggle).pack(anchor='w', pady=(0, 4))
-
-        params = ttk.Frame(main)
-        params.pack(fill=tk.X)
-        ttk.Label(params, text='Gain').grid(row=0, column=0, sticky='w')
-        ttk.Label(params, text='Read sigma').grid(row=0, column=1, sticky='w')
-        ttk.Label(params, text='Dark rate').grid(row=0, column=2, sticky='w')
-        self.gain_entry = ttk.Entry(params, textvariable=self.gain, width=6)
-        self.read_entry = ttk.Entry(params, textvariable=self.read_sigma, width=6)
-        self.dark_entry = ttk.Entry(params, textvariable=self.dark_rate, width=6)
-        self.gain_entry.grid(row=1, column=0, padx=(0, 2))
-        self.read_entry.grid(row=1, column=1, padx=(0, 2))
-        self.dark_entry.grid(row=1, column=2)
-        self._on_noise_toggle()
-
-    def _on_noise_toggle(self):
-        state = 'normal' if self.noise_enabled.get() else 'disabled'
-        for widget in (self.gain_entry, self.read_entry, self.dark_entry):
-            widget.config(state=state)
-        if self.on_noise_toggle:
-            self.on_noise_toggle()
-
-    def get_noise_config(self):
-        return {
-            'enabled': self.noise_enabled.get(),
-            'gain': float(self.gain.get()),
-            'read_sigma': float(self.read_sigma.get()),
-            'dark_rate': float(self.dark_rate.get()),
-        }
-
-
 class RandomSeedPanel:
     """Panel for random seed settings."""
 
