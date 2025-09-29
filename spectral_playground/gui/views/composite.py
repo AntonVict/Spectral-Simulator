@@ -595,11 +595,36 @@ class CompositeView:
         # Create popup window
         window = tk.Toplevel()
         window.title('Line Profile Spectral Analysis')
-        window.geometry('1000x700')
+        window.geometry('1000x750')
         
+        # Create main frame
+        main_frame = tk.Frame(window)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create control frame at top
+        control_frame = tk.Frame(main_frame)
+        control_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Add toggle for total intensity
+        show_total_var = tk.BooleanVar(value=False)  # Off by default
+        total_intensity_check = tk.Checkbutton(control_frame, 
+                                              text="Show total intensity (sum of all channels)",
+                                              variable=show_total_var,
+                                              command=lambda: self._update_line_plot(fig, canvas, line_spectra, distances, spectral, show_total_var.get()))
+        total_intensity_check.pack(side=tk.LEFT)
+        
+        # Create matplotlib figure
         fig = Figure(figsize=(10, 7), dpi=100)
-        canvas = FigureCanvasTkAgg(fig, master=window)
-        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        canvas = FigureCanvasTkAgg(fig, master=main_frame)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        
+        # Initial plot (without total intensity by default)
+        self._update_line_plot(fig, canvas, line_spectra, distances, spectral, show_total_var.get())
+    
+    def _update_line_plot(self, fig, canvas, line_spectra, distances, spectral, show_total=False):
+        """Update the line profile plot with or without total intensity."""
+        # Clear the figure
+        fig.clear()
         
         # Create subplots
         ax1 = fig.add_subplot(2, 1, 1)
@@ -607,16 +632,45 @@ class CompositeView:
         
         # Plot 1: Intensity vs distance for each channel
         channel_centers = np.array([ch.center_nm for ch in spectral.channels])
+        
+        # Plot individual channels
         for i, center in enumerate(channel_centers):
             color = wavelength_to_rgb_nm(center)
+            alpha = 0.7 if show_total else 1.0  # More transparent if total is shown
             ax1.plot(distances, line_spectra[:, i], color=color, 
-                    label=f'Ch{i+1} ({center:.0f}nm)', linewidth=2)
+                    label=f'Ch{i+1} ({center:.0f}nm)', linewidth=2, alpha=alpha)
         
+        # Configure primary axis
         ax1.set_xlabel('Distance (pixels)')
-        ax1.set_ylabel('Intensity')
-        ax1.set_title('Intensity vs Distance Along Line')
-        ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        ax1.set_ylabel('Channel Intensity', color='darkblue')
+        title = 'Intensity vs Distance Along Line'
+        if show_total:
+            title += ' (with Total)'
+        ax1.set_title(title)
         ax1.grid(True, alpha=0.3)
+        ax1.tick_params(axis='y', labelcolor='darkblue')
+        
+        if show_total:
+            # Calculate total intensity (sum of all channels)
+            total_intensity = np.sum(line_spectra, axis=1)
+            
+            # Create secondary y-axis for total intensity
+            ax1_twin = ax1.twinx()
+            ax1_twin.plot(distances, total_intensity, color='black', linewidth=3, 
+                         label='Total Intensity', linestyle='--', alpha=0.9)
+            
+            # Configure secondary axis
+            ax1_twin.set_ylabel('Total Intensity (Sum)', color='black')
+            ax1_twin.tick_params(axis='y', labelcolor='black')
+            
+            # Combine legends from both axes
+            lines1, labels1 = ax1.get_legend_handles_labels()
+            lines2, labels2 = ax1_twin.get_legend_handles_labels()
+            ax1.legend(lines1 + lines2, labels1 + labels2, 
+                      bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
+        else:
+            # Just the regular legend for channels
+            ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
         
         # Plot 2: 2D spectral map
         im = ax2.imshow(line_spectra.T, aspect='auto', cmap='viridis', 
