@@ -38,7 +38,6 @@ class AbundanceField:
         
         # Initialize output maps
         A_maps = np.zeros((K, H, W), dtype=np.float32)
-        yy, xx = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
 
         if kind == "dots":
             density = float(kwargs.get("density_per_100x100_um2", 50.0))
@@ -50,6 +49,31 @@ class AbundanceField:
             area_um2 = (H * pixel_size_um) * (W * pixel_size_um)
             expected_spots = density * (area_um2 / 1.0e4)
 
+            def add_local_gaussian(map_ref: Array, cy: int, cx: int, sigma: float, amplitude: float) -> None:
+                """Add Gaussian using local computation for efficiency and accuracy."""
+                # Calculate local region (4 sigma is enough for >99.9% of the Gaussian)
+                radius = int(np.ceil(4 * sigma))
+                
+                # Bounds checking
+                y_min = max(0, cy - radius)
+                y_max = min(H, cy + radius + 1)
+                x_min = max(0, cx - radius)
+                x_max = min(W, cx + radius + 1)
+                
+                if y_min >= y_max or x_min >= x_max:
+                    return  # Outside bounds
+                
+                # Local meshgrid only for this region
+                y_local = np.arange(y_min, y_max)
+                x_local = np.arange(x_min, x_max)
+                yy_local, xx_local = np.meshgrid(y_local, x_local, indexing="ij")
+                
+                # Compute Gaussian only in local region
+                g = np.exp(-((yy_local - cy) ** 2 + (xx_local - cx) ** 2) / (2.0 * sigma ** 2))
+                
+                # Add only to local region
+                map_ref[y_min:y_max, x_min:x_max] += (amplitude * g).astype(np.float32)
+
             for k in range(K):
                 n_spots = self.rng.poisson(lam=max(expected_spots, 0.0))
                 if n_spots == 0:
@@ -58,8 +82,7 @@ class AbundanceField:
                     cy = int(self.rng.integers(0, H))
                     cx = int(self.rng.integers(0, W))
                     amp = float(self.rng.random()) + 0.5  # avoid too small amplitudes
-                    g = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2.0 * sigma_px ** 2))
-                    A_maps[k] += (amp * g).astype(np.float32)
+                    add_local_gaussian(A_maps[k], cy, cx, sigma_px, amp)
             return A_maps.reshape(K, P)
 
         # New object-based generators
@@ -69,9 +92,30 @@ class AbundanceField:
         intensity_max = float(kwargs.get("intensity_max", 1.5))
 
         def add_circle(map_ref: Array, cy: int, cx: int, radius: float, amplitude: float) -> None:
-            rr2 = (yy - cy) ** 2 + (xx - cx) ** 2
-            mask = rr2 <= (radius ** 2)
-            map_ref[mask] += amplitude
+            """Add circle using local computation for efficiency."""
+            # Calculate local region
+            int_radius = int(np.ceil(radius))
+            
+            # Bounds checking
+            y_min = max(0, cy - int_radius)
+            y_max = min(H, cy + int_radius + 1)
+            x_min = max(0, cx - int_radius)
+            x_max = min(W, cx + int_radius + 1)
+            
+            if y_min >= y_max or x_min >= x_max:
+                return  # Outside bounds
+            
+            # Local meshgrid only for this region
+            y_local = np.arange(y_min, y_max)
+            x_local = np.arange(x_min, x_max)
+            yy_local, xx_local = np.meshgrid(y_local, x_local, indexing="ij")
+            
+            # Compute circle only in local region
+            rr2 = (yy_local - cy) ** 2 + (xx_local - cx) ** 2
+            circle_mask = rr2 <= (radius ** 2)
+            
+            # Add only to local region
+            map_ref[y_min:y_max, x_min:x_max][circle_mask] += amplitude
 
         def add_box(map_ref: Array, cy: int, cx: int, half: int, amplitude: float) -> None:
             y0 = max(0, cy - half)
@@ -81,8 +125,29 @@ class AbundanceField:
             map_ref[y0:y1, x0:x1] += amplitude
 
         def add_gaussian(map_ref: Array, cy: int, cx: int, sigma: float, amplitude: float) -> None:
-            g = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2.0 * sigma ** 2))
-            map_ref += amplitude * g
+            """Add Gaussian using local computation for efficiency and accuracy."""
+            # Calculate local region (4 sigma is enough for >99.9% of the Gaussian)
+            radius = int(np.ceil(4 * sigma))
+            
+            # Bounds checking
+            y_min = max(0, cy - radius)
+            y_max = min(H, cy + radius + 1)
+            x_min = max(0, cx - radius)
+            x_max = min(W, cx + radius + 1)
+            
+            if y_min >= y_max or x_min >= x_max:
+                return  # Outside bounds
+            
+            # Local meshgrid only for this region
+            y_local = np.arange(y_min, y_max)
+            x_local = np.arange(x_min, x_max)
+            yy_local, xx_local = np.meshgrid(y_local, x_local, indexing="ij")
+            
+            # Compute Gaussian only in local region
+            g = np.exp(-((yy_local - cy) ** 2 + (xx_local - cx) ** 2) / (2.0 * sigma ** 2))
+            
+            # Add only to local region
+            map_ref[y_min:y_max, x_min:x_max] += amplitude * g
 
         def rand_amp() -> float:
             return float(self.rng.uniform(intensity_min, intensity_max))
@@ -157,9 +222,31 @@ class AbundanceField:
             raise ValueError(f"Unknown region type: {rtype}")
 
         def add_circle(map_ref: Array, cy: int, cx: int, radius: float, amplitude: float, mask: Array) -> None:
-            rr2 = (yy - cy) ** 2 + (xx - cx) ** 2
-            local = (rr2 <= (radius ** 2)).astype(np.float32) * amplitude
-            map_ref += local * mask
+            """Add circle using local computation for efficiency."""
+            # Calculate local region
+            int_radius = int(np.ceil(radius))
+            
+            # Bounds checking
+            y_min = max(0, cy - int_radius)
+            y_max = min(H, cy + int_radius + 1)
+            x_min = max(0, cx - int_radius)
+            x_max = min(W, cx + int_radius + 1)
+            
+            if y_min >= y_max or x_min >= x_max:
+                return  # Outside bounds
+            
+            # Local meshgrid only for this region
+            y_local = np.arange(y_min, y_max)
+            x_local = np.arange(x_min, x_max)
+            yy_local, xx_local = np.meshgrid(y_local, x_local, indexing="ij")
+            
+            # Compute circle only in local region
+            rr2 = (yy_local - cy) ** 2 + (xx_local - cx) ** 2
+            circle_mask = (rr2 <= (radius ** 2)).astype(np.float32)
+            
+            # Apply mask and add only to local region
+            local_mask = mask[y_min:y_max, x_min:x_max]
+            map_ref[y_min:y_max, x_min:x_max] += amplitude * circle_mask * local_mask
 
         def add_box(map_ref: Array, cy: int, cx: int, half: int, amplitude: float, mask: Array) -> None:
             y0 = max(0, cy - half)
@@ -171,8 +258,30 @@ class AbundanceField:
             map_ref += local * mask
 
         def add_gaussian(map_ref: Array, cy: int, cx: int, sigma: float, amplitude: float, mask: Array) -> None:
-            g = np.exp(-((yy - cy) ** 2 + (xx - cx) ** 2) / (2.0 * sigma ** 2)).astype(np.float32)
-            map_ref += (amplitude * g) * mask
+            """Add Gaussian using local computation for efficiency and accuracy."""
+            # Calculate local region (4 sigma is enough for >99.9% of the Gaussian)
+            radius = int(np.ceil(4 * sigma))
+            
+            # Bounds checking
+            y_min = max(0, cy - radius)
+            y_max = min(H, cy + radius + 1)
+            x_min = max(0, cx - radius)
+            x_max = min(W, cx + radius + 1)
+            
+            if y_min >= y_max or x_min >= x_max:
+                return  # Outside bounds
+            
+            # Local meshgrid only for this region
+            y_local = np.arange(y_min, y_max)
+            x_local = np.arange(x_min, x_max)
+            yy_local, xx_local = np.meshgrid(y_local, x_local, indexing="ij")
+            
+            # Compute Gaussian only in local region
+            g = np.exp(-((yy_local - cy) ** 2 + (xx_local - cx) ** 2) / (2.0 * sigma ** 2)).astype(np.float32)
+            
+            # Apply mask and add only to local region
+            local_mask = mask[y_min:y_max, x_min:x_max]
+            map_ref[y_min:y_max, x_min:x_max] += (amplitude * g) * local_mask
 
         for obj in (objects or []):
             k = int(obj.get("fluor_index", 0))

@@ -71,7 +71,7 @@ class ViewerPanel(ttk.Frame):
         ttk.Label(top_controls, text='Composite View').pack(side=tk.LEFT)
         ttk.Button(top_controls, text='Expand', command=on_expand_composite, width=12).pack(side=tk.RIGHT)
 
-        self.composite_view = CompositeView(image_frame)
+        self.composite_view = CompositeView(image_frame, on_visual_settings_changed=self._on_composite_visual_settings_changed)
 
     def set_channels(self, names: Iterable[str]) -> None:
         for widget in self.channel_checks_frame.winfo_children():
@@ -106,3 +106,7 @@ class ViewerPanel(ttk.Frame):
 
     def active_channel_flags(self) -> List[bool]:
         return [var.get() for var in self.channel_vars]
+    
+    def _on_composite_visual_settings_changed(self) -> None:
+        """Called when composite visual settings change - trigger redraw."""
+        self.on_channels_changed()  # This will trigger update_visualisation in main_gui
