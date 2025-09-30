@@ -1,7 +1,7 @@
 [project]
 name = "spectral_playground"
-version = "0.2.0"
-description = "Spectral Visualization Playground"
+version = "0.1.0"
+description = "Spectral Simulator"
 readme = "README.md"
 requires-python = ">=3.9"
 authors = [

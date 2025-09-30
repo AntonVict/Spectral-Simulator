@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "Spectral Simulator"
+abstract: "A desktop application for synthesizing and exploring synthetic multispectral fluorescence datasets for prototyping spectral imaging configurations and visual analysis."
+authors:
+  - family-names: Victorin
+    given-names: Anton
+version: 0.1.0
+date-released: 2025-09-30
+license: MIT
+repository-code: "https://github.com/AntonVict/Spectral-Simulator"
+keywords:
+  - spectral-imaging
+  - fluorescence
+  - multispectral
+  - visualization
+  - synthetic-data
+  - forward-model

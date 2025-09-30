@@ -1,5 +1,5 @@
-Spectral Visualization Playground
-==================================
+Spectral Simulator
+==================
 
 A desktop application for synthesizing and exploring synthetic multispectral fluorescence datasets. It is intended for prototyping spectral imaging configurations and visual analysis.
 
@@ -55,9 +55,14 @@ A desktop application for synthesizing and exploring synthetic multispectral flu
 
 ### Install from Source
 ```bash
-git clone <repository-url>
-cd spectral_playground
+git clone https://github.com/AntonVict/Spectral-Simulator.git
+cd Spectral-Simulator
 pip install -e .
+```
+
+Alternatively, install directly from GitHub:
+```bash
+pip install git+https://github.com/AntonVict/Spectral-Simulator.git
 ```
 
 ## Quick Start
@@ -159,8 +164,43 @@ Simulate background structure using:
 - **Memory Efficient**: Streaming operations for large datasets
 - **Cross-Platform**: Pure Python with standard scientific libraries
 
+## Citation
+
+If you use this software in your research, please cite it:
+
+```bibtex
+@software{victorin2025spectral,
+  author = {Victorin, Anton},
+  title = {Spectral Simulator},
+  year = {2025},
+  version = {0.1.0},
+  url = {https://github.com/AntonVict/Spectral-Simulator},
+  license = {MIT}
+}
+```
+
+Alternatively, you can cite using the `CITATION.cff` file included in this repository, which is automatically recognized by GitHub and Zenodo.
+
+## Contributing
+
+Contributions are welcome! If you'd like to contribute:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please ensure your code follows the existing style and includes appropriate documentation.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+This means you are free to use, modify, and distribute this software for any purpose, including commercial applications, as long as you include the original copyright notice.
+
 ## Version Information
-- Current Version: 0.2.0
+- Current Version: 0.1.0
 - Python Requirements: ≥3.9
 - Key Dependencies: numpy≥1.24, scipy≥1.10, matplotlib≥3.6
 

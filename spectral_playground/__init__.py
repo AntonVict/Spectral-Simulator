@@ -1,4 +1,4 @@
-"""Spectral Visualization Playground package."""
+"""Spectral Simulator package."""
 
 __all__ = [
     "core",
@@ -7,4 +7,4 @@ __all__ = [
     "gui",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.1.0"
