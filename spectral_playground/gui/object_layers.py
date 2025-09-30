@@ -62,7 +62,7 @@ class ObjectLayersManager:
         
         btns = ttk.Frame(header_frame)
         btns.pack(side=tk.RIGHT)
-        ttk.Button(btns, text="🎲 Quick-Assign", width=12, command=self._quick_assign_sample).pack(side=tk.LEFT, padx=(0,4))
+        ttk.Button(btns, text="Quick-Assign", width=12, command=self._quick_assign_sample).pack(side=tk.LEFT, padx=(0,4))
         ttk.Button(btns, text="Add", width=6, command=self._add_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Remove", width=6, command=self._remove_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Copy", width=6, command=self._duplicate_object).pack(side=tk.LEFT)
@@ -483,7 +483,7 @@ class ObjectLayersManager:
         try:
             img_h, img_w = self.get_image_dims()
         except:
-            self.log("⚠️ Cannot determine image size. Using default 128x128.")
+            self.log("Cannot determine image size. Using default 128x128.")
             img_h, img_w = 128, 128
         
         # Get available fluorophores
@@ -545,5 +545,5 @@ class ObjectLayersManager:
         self._refresh_object_list()
         
         # Log summary
-        self.log(f"🎲 Generated {total_spots + 1} spots across {num_fluors} fluorophores")
+        self.log(f"Generated {total_spots + 1} spots across {num_fluors} fluorophores")
         self.log(f"   + 1 contamination dot ({contam_fluor_name}, σ={contam_sigma:.2f})")

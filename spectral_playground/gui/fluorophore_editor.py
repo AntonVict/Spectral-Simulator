@@ -161,7 +161,7 @@ class FluorophoreListManager:
         # Import button on new row, right-aligned
         import_frame = ttk.Frame(self.parent_frame)
         import_frame.pack(fill=tk.X, pady=(0,4))
-        ttk.Button(import_frame, text="📁 Import Signature(s)", command=self.import_signatures, width=20).pack(side=tk.RIGHT)
+        ttk.Button(import_frame, text="Import Signature(s)", command=self.import_signatures, width=20).pack(side=tk.RIGHT)
         
         # Treeview for fluorophore list (more compact)
         tree_frame = ttk.Frame(self.parent_frame)
