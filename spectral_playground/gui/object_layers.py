@@ -10,15 +10,16 @@ import copy
 class ObjectLayersManager:
     """Manager for object layers that can be placed on the image."""
     
-    def __init__(self, parent_frame, log_callback, get_image_dims_callback):
+    def __init__(self, parent_frame, log_callback, get_image_dims_callback, get_fluorophore_names_callback):
         self.parent_frame = parent_frame
         self.log = log_callback
         self.get_image_dims = get_image_dims_callback
+        self.get_fluorophore_names = get_fluorophore_names_callback
         self.objects = []
         self.include_base_field = tk.BooleanVar(value=True)
         
         # Object editor variables
-        self.obj_fluor = tk.IntVar(value=1)  # 1-indexed for user display
+        self.obj_fluor = tk.StringVar(value="F1")  # Stores fluorophore name (e.g., "F1")
         self.obj_kind = tk.StringVar(value="gaussian_blobs")
         self.obj_count = tk.IntVar(value=50)
         self.obj_size = tk.DoubleVar(value=6.0)
@@ -96,10 +97,11 @@ class ObjectLayersManager:
         
         # Row 0: Fluor and Kind
         ttk.Label(basic_tab, text="Fluorophore:").grid(row=0, column=0, sticky='w', padx=(0,4))
-        fluor_frame = ttk.Frame(basic_tab)
-        fluor_frame.grid(row=0, column=1, sticky='w')
-        ttk.Spinbox(fluor_frame, textvariable=self.obj_fluor, from_=1, to=10, width=4, increment=1).pack(side=tk.LEFT)
-        ttk.Label(fluor_frame, text="(F1, F2, ...)", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT, padx=(2,0))
+        # Use a dropdown with available fluorophore names
+        self.fluor_combo = ttk.Combobox(basic_tab, textvariable=self.obj_fluor, 
+                                       values=self._get_fluorophore_list(), 
+                                       state='readonly', width=10)
+        self.fluor_combo.grid(row=0, column=1, sticky='w')
         
         ttk.Label(basic_tab, text="Kind:").grid(row=0, column=2, sticky='w', padx=(12,4))
         self.kind_combo = ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12)
@@ -110,8 +112,10 @@ class ObjectLayersManager:
         ttk.Label(basic_tab, text="Count:").grid(row=1, column=0, sticky='w', pady=(6,0))
         ttk.Entry(basic_tab, textvariable=self.obj_count, width=8).grid(row=1, column=1, sticky='w', pady=(6,0))
         
-        ttk.Label(basic_tab, text="Size (px):").grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
-        ttk.Entry(basic_tab, textvariable=self.obj_size, width=8).grid(row=1, column=3, sticky='w', pady=(6,0))
+        self.size_label = ttk.Label(basic_tab, text="Size (px):")
+        self.size_label.grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
+        self.size_entry = ttk.Entry(basic_tab, textvariable=self.obj_size, width=8)
+        self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
 
         # Row 2: Intensity range
         ttk.Label(basic_tab, text="Intensity:").grid(row=2, column=0, sticky='w', pady=(6,0))
@@ -121,15 +125,16 @@ class ObjectLayersManager:
         ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
         ttk.Entry(intensity_frame, textvariable=self.obj_i_max, width=6).pack(side=tk.LEFT)
         
-        # Row 3: Spot sigma (for Gaussian blobs and dots)
+        # Row 3: Spot sigma (for Gaussian blobs and dots only)
         self.sigma_label = ttk.Label(basic_tab, text="Spot σ (px):")
         self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
-        sigma_frame = ttk.Frame(basic_tab)
-        sigma_frame.grid(row=3, column=1, sticky='w', pady=(6,0))
-        self.sigma_entry = ttk.Entry(sigma_frame, textvariable=self.obj_sigma, width=8)
-        self.sigma_entry.pack(side=tk.LEFT)
-        self.sigma_help = ttk.Label(sigma_frame, text="(Gaussian spread)", foreground="gray", font=('TkDefaultFont', 8))
-        self.sigma_help.pack(side=tk.LEFT, padx=(4,0))
+        self.sigma_entry = ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=8)
+        self.sigma_entry.grid(row=3, column=1, columnspan=3, sticky='w', pady=(6,0))
+        
+        # Help text for sigma
+        self.sigma_help_label = ttk.Label(basic_tab, text="Controls Gaussian spread", 
+                                         foreground="gray", font=('TkDefaultFont', 8))
+        self.sigma_help_label.grid(row=4, column=0, columnspan=4, sticky='w', pady=(2,0))
 
     def _build_region_tab(self, notebook):
         """Build the region tab for object editing."""
@@ -223,8 +228,12 @@ class ObjectLayersManager:
             return
         obj = self.objects[idx]
         
+        # Update fluorophore dropdown with current fluorophore list
+        self.fluor_combo.config(values=self._get_fluorophore_list())
+        
         # Update UI with selected object data
-        self.obj_fluor.set(int(obj.get('fluor_index', 0)) + 1)  # Convert from 0-indexed to 1-indexed for display
+        fluor_idx = int(obj.get('fluor_index', 0))
+        self.obj_fluor.set(f"F{fluor_idx + 1}")  # Convert from 0-indexed to name
         self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
         self.obj_count.set(int(obj.get('count', 50)))
         self.obj_size.set(float(obj.get('size_px', 6.0)))
@@ -267,8 +276,12 @@ class ObjectLayersManager:
             elif region_type == 'circle':
                 region.update({'cx': self.obj_cx.get(), 'cy': self.obj_cy.get(), 'r': self.obj_r.get()})
             
+            # Convert fluorophore name (e.g., "F1") to 0-indexed integer
+            fluor_name = self.obj_fluor.get()
+            fluor_index = self._fluorophore_name_to_index(fluor_name)
+            
             self.objects[idx] = {
-                'fluor_index': int(self.obj_fluor.get()) - 1,  # Convert from 1-indexed to 0-indexed
+                'fluor_index': fluor_index,
                 'kind': self.obj_kind.get(),
                 'region': region,
                 'count': int(self.obj_count.get()),
@@ -283,7 +296,7 @@ class ObjectLayersManager:
             items = self.obj_tree.get_children()
             if idx < len(items):
                 self.obj_tree.selection_set(items[idx])
-            self.log(f"Updated object {idx+1}: F{self.obj_fluor.get()}, {self.obj_kind.get()}, {region_type}")
+            self.log(f"Updated object {idx+1}: {fluor_name}, {self.obj_kind.get()}, {region_type}")
             
         except Exception as e:
             self.log(f"Error updating object: {str(e)}")
@@ -292,19 +305,28 @@ class ObjectLayersManager:
         """Handle object kind change to show/hide relevant parameters."""
         kind = self.obj_kind.get()
         
-        # Show sigma field only for gaussian_blobs and dots
+        # Show/hide parameters based on object kind
         if kind in ("gaussian_blobs", "dots"):
-            self.sigma_label.grid()
-            self.sigma_entry.pack()
-            self.sigma_help.pack()
+            # Gaussian blobs and dots: ONLY use spot_sigma (size_px is ignored in code!)
+            self.size_label.grid_remove()
+            self.size_entry.grid_remove()
+            
+            # Show sigma controls
+            self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
+            self.sigma_entry.grid(row=3, column=1, columnspan=3, sticky='w', pady=(6,0))
+            self.sigma_help_label.grid(row=4, column=0, columnspan=4, sticky='w', pady=(2,0))
+            
             if kind == "gaussian_blobs":
-                self.sigma_help.config(text="(Gaussian spread)")
-            else:
-                self.sigma_help.config(text="(Dot spread)")
+                self.sigma_help_label.config(text="Controls Gaussian spread (σ = standard deviation in pixels)")
+            else:  # dots
+                self.sigma_help_label.config(text="Controls dot spread (σ = standard deviation in pixels)")
         else:
-            # Hide sigma controls for circles and boxes since they use size_px instead
+            # Circles and boxes: use size_px for radius/dimensions, no sigma
+            self.size_label.grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
+            self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
             self.sigma_label.grid_remove()
-            # Note: We don't pack_forget the entry/help since they're in a frame
+            self.sigma_entry.grid_remove()
+            self.sigma_help_label.grid_remove()
             
     def _on_region_type_change(self, event=None):
         """Handle region type change."""
@@ -358,6 +380,25 @@ class ObjectLayersManager:
     def should_include_base_field(self):
         """Check if base field should be included."""
         return self.include_base_field.get()
+    
+    def _get_fluorophore_list(self):
+        """Get list of available fluorophore names."""
+        try:
+            fluor_names = self.get_fluorophore_names()
+            return fluor_names if fluor_names else ["F1", "F2", "F3"]
+        except:
+            return ["F1", "F2", "F3"]
+    
+    def _fluorophore_name_to_index(self, name: str) -> int:
+        """Convert fluorophore name (e.g., 'F1') to 0-indexed integer."""
+        try:
+            # Extract number from name like "F1" -> 1
+            if name.startswith('F'):
+                return int(name[1:]) - 1
+            else:
+                return int(name) - 1
+        except (ValueError, IndexError):
+            return 0
         
     def _add_preset_objects(self):
         """Add 3 preset objects, one for each default fluorophore."""

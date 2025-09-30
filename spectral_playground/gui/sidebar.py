@@ -92,7 +92,7 @@ class Sidebar(ttk.Frame):
         objects_group = ttk.LabelFrame(self._settings_frame, text='Object Layers')
         objects_group.grid(row=row, column=0, sticky='ew', padx=2, pady=2)
         objects_group.columnconfigure(0, weight=1)
-        self.object_manager = ObjectLayersManager(objects_group, log_callback, self._get_image_dims)
+        self.object_manager = ObjectLayersManager(objects_group, log_callback, self._get_image_dims, self._get_fluorophore_names)
         row += 1
 
         seed_group = ttk.LabelFrame(self._settings_frame, text='Random Seed')
@@ -103,6 +103,14 @@ class Sidebar(ttk.Frame):
     def _get_image_dims(self):
         dims = self.panels['dimensions'].get_dimensions()
         return dims['H'], dims['W']
+    
+    def _get_fluorophore_names(self):
+        """Get list of fluorophore names for the object layers dropdown."""
+        try:
+            fluorophores = self.fluor_manager.get_fluorophores()
+            return [f.name for f in fluorophores]
+        except:
+            return ["F1", "F2", "F3"]
 
     def get_generation_config(self) -> GenerationConfig:
         grid = self.panels['grid'].get_wavelength_grid()
