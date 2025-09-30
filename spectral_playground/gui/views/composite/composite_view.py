@@ -109,11 +109,11 @@ class CompositeView:
                                   command=lambda: self._set_spectral_mode(SpectralMode.LINE))
         self.line_btn.pack(side=tk.LEFT, padx=1)
         
-        self.area_btn = tk.Button(spectral_frame, text="R", width=3, relief=tk.RAISED,
+        self.area_btn = tk.Button(spectral_frame, text="⬛", width=3, relief=tk.RAISED,
                                   command=lambda: self._set_spectral_mode(SpectralMode.AREA))
         self.area_btn.pack(side=tk.LEFT, padx=1)
         
-        self.clear_btn = tk.Button(spectral_frame, text="X", width=3, relief=tk.RAISED,
+        self.clear_btn = tk.Button(spectral_frame, text="✕", width=3, relief=tk.RAISED,
                                    command=lambda: self._set_spectral_mode(SpectralMode.NONE))
         self.clear_btn.pack(side=tk.LEFT, padx=(5, 0))
 
@@ -122,7 +122,7 @@ class CompositeView:
         visual_separator = ttk.Separator(parent, orient='vertical')
         visual_separator.pack(side=tk.LEFT, fill=tk.Y, padx=(10, 5))
         
-        self.visual_settings_btn = tk.Button(parent, text="V", width=3, relief=tk.RAISED,
+        self.visual_settings_btn = tk.Button(parent, text="⚙️", width=3, relief=tk.RAISED,
                                            command=self.visual_settings.show_settings_dialog)
         self.visual_settings_btn.pack(side=tk.LEFT, padx=(0, 10))
 
