@@ -5,6 +5,7 @@ __pycache__/
 
 /spectral_playground.egg-info
 
+# Exclude generated data (not documentation images)
 /saved_data/datasets/*
 !/saved_data/datasets/.gitkeep
 /saved_data/exports/*
@@ -13,3 +14,7 @@ __pycache__/
 !/saved_data/images/.gitkeep
 /saved_data/plots/*
 !/saved_data/plots/.gitkeep
+
+# Include documentation images
+!/docs/images/*.png
+!/docs/images/*.jpg
