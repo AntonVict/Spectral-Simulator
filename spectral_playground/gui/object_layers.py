@@ -5,6 +5,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 import copy
+import random
 
 
 class ObjectLayersManager:
@@ -57,10 +58,11 @@ class ObjectLayersManager:
         header_frame = ttk.Frame(list_frame)
         header_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0,4))
         header_frame.columnconfigure(0, weight=1)
-        ttk.Label(header_frame, text="Objects", font=('TkDefaultFont', 9, 'bold')).pack(side=tk.LEFT)
+        ttk.Label(header_frame, text="Object Layers:", font=('TkDefaultFont', 9, 'bold')).pack(side=tk.LEFT)
         
         btns = ttk.Frame(header_frame)
         btns.pack(side=tk.RIGHT)
+        ttk.Button(btns, text="🎲 Quick-Assign", width=12, command=self._quick_assign_sample).pack(side=tk.LEFT, padx=(0,4))
         ttk.Button(btns, text="Add", width=6, command=self._add_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Remove", width=6, command=self._remove_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Copy", width=6, command=self._duplicate_object).pack(side=tk.LEFT)
@@ -207,7 +209,9 @@ class ObjectLayersManager:
             self.obj_tree.delete(i)
         # Populate with simplified format
         for obj in self.objects:
-            fluor = obj.get('fluor_index', 0)
+            # Get fluorophore name from index
+            fluor_idx = obj.get('fluor_index', 0)
+            fluor_name = self._fluorophore_index_to_name(fluor_idx)
             kind = obj.get('kind', '')
             region = obj.get('region', {'type': 'full'})
             rtxt = region.get('type', 'full')
@@ -216,7 +220,7 @@ class ObjectLayersManager:
             elif rtxt == 'circle':
                 rtxt = f"circle(r={region.get('r',0):.0f})"
             count = obj.get('count', 0)
-            self.obj_tree.insert('', 'end', values=(f"F{fluor+1}", kind, rtxt, count))
+            self.obj_tree.insert('', 'end', values=(fluor_name, kind, rtxt, count))
         
     def _on_object_select(self, event=None):
         """Handle object selection."""
@@ -233,7 +237,8 @@ class ObjectLayersManager:
         
         # Update UI with selected object data
         fluor_idx = int(obj.get('fluor_index', 0))
-        self.obj_fluor.set(f"F{fluor_idx + 1}")  # Convert from 0-indexed to name
+        fluor_name = self._fluorophore_index_to_name(fluor_idx)
+        self.obj_fluor.set(fluor_name)  # Set actual fluorophore name
         self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
         self.obj_count.set(int(obj.get('count', 50)))
         self.obj_size.set(float(obj.get('size_px', 6.0)))
@@ -390,15 +395,27 @@ class ObjectLayersManager:
             return ["F1", "F2", "F3"]
     
     def _fluorophore_name_to_index(self, name: str) -> int:
-        """Convert fluorophore name (e.g., 'F1') to 0-indexed integer."""
+        """Convert fluorophore name to 0-indexed integer by looking up in fluorophore list."""
         try:
-            # Extract number from name like "F1" -> 1
-            if name.startswith('F'):
+            fluor_names = self._get_fluorophore_list()
+            if name in fluor_names:
+                return fluor_names.index(name)
+            # Fallback: try to extract number from "FX" format
+            if name.startswith('F') and name[1:].isdigit():
                 return int(name[1:]) - 1
-            else:
-                return int(name) - 1
+            return 0
         except (ValueError, IndexError):
             return 0
+    
+    def _fluorophore_index_to_name(self, index: int) -> str:
+        """Convert 0-indexed integer to fluorophore name by looking up in fluorophore list."""
+        try:
+            fluor_names = self._get_fluorophore_list()
+            if 0 <= index < len(fluor_names):
+                return fluor_names[index]
+            return f"F{index+1}"  # Fallback
+        except:
+            return f"F{index+1}"
         
     def _add_preset_objects(self):
         """Add 3 preset objects, one for each default fluorophore."""
@@ -450,3 +467,83 @@ class ObjectLayersManager:
         if items:
             self.obj_tree.selection_set(items[0])
             self._on_object_select()
+    
+    def _quick_assign_sample(self):
+        """Generate a sample dataset with all available fluorophores.
+        
+        Creates a varied distribution of Gaussian blobs with:
+        - All available fluorophores
+        - Varying spot counts (100-2000) across fluorophores
+        - Random positions
+        - Random amplitudes (0.5-1.5)
+        - Random spot sigma (0.5-6.0)
+        - One small contamination dot with low intensity
+        """
+        # Get image dimensions
+        try:
+            img_h, img_w = self.get_image_dims()
+        except:
+            self.log("⚠️ Cannot determine image size. Using default 128x128.")
+            img_h, img_w = 128, 128
+        
+        # Get available fluorophores
+        fluorophore_names = self.get_fluorophore_names()
+        if not fluorophore_names:
+            from tkinter import messagebox
+            messagebox.showwarning("No Fluorophores", "Please add fluorophores first!")
+            return
+        
+        num_fluors = len(fluorophore_names)
+        
+        # Clear existing objects
+        self.objects.clear()
+        
+        # Generate spot counts for each fluorophore
+        # Using your existing random mechanism
+        total_spots = 0
+        for fluor_idx, fluor_name in enumerate(fluorophore_names):
+            # Random count between 100-2000 for each fluorophore
+            count = random.randint(100, 2000)
+            
+            # Add one object that generates 'count' spots
+            amplitude_min = 0.5
+            amplitude_max = 1.5
+            spot_sigma = random.uniform(0.5, 6.0)
+            
+            obj = {
+                'fluor_index': fluor_idx,
+                'kind': 'gaussian_blobs',
+                'region': {'type': 'full'},
+                'count': count,
+                'size_px': 0,  # Not used for Gaussian blobs
+                'intensity_min': amplitude_min,
+                'intensity_max': amplitude_max,
+                'spot_sigma': spot_sigma
+            }
+            self.objects.append(obj)
+            
+            total_spots += count
+        
+        # Add contamination dot (small, low intensity, random fluorophore)
+        contam_fluor_idx = random.randint(0, num_fluors - 1)
+        contam_fluor_name = fluorophore_names[contam_fluor_idx]
+        contam_sigma = random.uniform(0.3, 0.8)
+        
+        contam_obj = {
+            'fluor_index': contam_fluor_idx,
+            'kind': 'dots',
+            'region': {'type': 'full'},
+            'count': 1,
+            'size_px': 0,
+            'intensity_min': 0.1,
+            'intensity_max': 0.3,
+            'spot_sigma': contam_sigma
+        }
+        self.objects.append(contam_obj)
+        
+        # Refresh the list
+        self._refresh_object_list()
+        
+        # Log summary
+        self.log(f"🎲 Generated {total_spots + 1} spots across {num_fluors} fluorophores")
+        self.log(f"   + 1 contamination dot ({contam_fluor_name}, σ={contam_sigma:.2f})")

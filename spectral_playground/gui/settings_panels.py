@@ -10,8 +10,8 @@ class WavelengthGridPanel:
     """Panel for wavelength grid settings."""
 
     def __init__(self, parent_frame):
-        self.grid_start = tk.DoubleVar(value=450.0)
-        self.grid_stop = tk.DoubleVar(value=700.0)
+        self.grid_start = tk.DoubleVar(value=300.0)
+        self.grid_stop = tk.DoubleVar(value=900.0)
         self.grid_step = tk.DoubleVar(value=1.0)
         self._build_ui(parent_frame)
 

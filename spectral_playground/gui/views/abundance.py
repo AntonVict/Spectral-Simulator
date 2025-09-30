@@ -16,6 +16,8 @@ class AbundancePanel(ttk.Frame):
 
     def __init__(self, parent: tk.Widget) -> None:
         super().__init__(parent)
+        self._fluorophore_names = []  # Store fluorophore names
+        
         control_frame = ttk.Frame(self)
         control_frame.pack(fill=tk.X, padx=4, pady=2)
 
@@ -35,6 +37,7 @@ class AbundancePanel(ttk.Frame):
         self.expand_button.config(command=callback)
 
     def set_fluorophores(self, names: List[str]) -> None:
+        self._fluorophore_names = names  # Store for later use in plot titles
         self.dropdown['values'] = names
         if names:
             self._selected.set(names[0])
@@ -73,7 +76,10 @@ class AbundancePanel(ttk.Frame):
         H, W = data.field.shape
         abundance = data.A[idx].reshape(H, W)
         im = ax.imshow(abundance, cmap='magma')
-        ax.set_title(f'Fluorophore F{idx + 1}', fontsize=10)
+        
+        # Use actual fluorophore name instead of F{idx+1}
+        fluor_name = self._fluorophore_names[idx] if idx < len(self._fluorophore_names) else f'F{idx + 1}'
+        ax.set_title(f'Fluorophore {fluor_name}', fontsize=10)
         ax.axis('off')
         self.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         self.canvas.draw_idle()
@@ -103,7 +109,10 @@ class AbundancePanel(ttk.Frame):
         for idx in range(min(K, rows * cols)):
             ax = figure.add_subplot(rows, cols, idx + 1)
             im = ax.imshow(data.A[idx].reshape(H, W), cmap='magma')
-            ax.set_title(f'F{idx + 1}', fontsize=12)
+            
+            # Use actual fluorophore name instead of F{idx+1}
+            fluor_name = self._fluorophore_names[idx] if idx < len(self._fluorophore_names) else f'F{idx + 1}'
+            ax.set_title(fluor_name, fontsize=12)
             ax.axis('off')
             figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 

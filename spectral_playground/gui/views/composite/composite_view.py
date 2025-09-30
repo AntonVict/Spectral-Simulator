@@ -42,6 +42,15 @@ class CompositeView:
         self._current_data: Optional[PlaygroundState] = None
         self.spectral_mode = SpectralMode.NONE
         
+        # Store axis limits for zoom/pan preservation (only when image dimensions unchanged)
+        self._saved_xlim: Optional[tuple] = None
+        self._saved_ylim: Optional[tuple] = None
+        self._last_image_shape: Optional[tuple] = None  # Track image dimensions (H, W)
+        
+        # Cache for base composite (before visual settings applied)
+        self._base_composite_cache: Optional[np.ndarray] = None
+        self._cache_channels: Optional[list] = None
+        
         # Initialize managers before creating toolbar (toolbar needs them)
         self.visual_settings = VisualSettingsManager(
             self.canvas_widget, 
@@ -143,16 +152,37 @@ class CompositeView:
             state: Current playground state
             active_channels: Which channels are active for display
         """
-        self.figure.clear()
-        self._rgb_cache = None
         self._current_data = state
-        self._clear_overlays()
-
         data = state.data
+        
         if not data.has_data:
+            self.figure.clear()
             self.figure.suptitle('No dataset loaded', fontsize=12)
+            self._saved_xlim = None
+            self._saved_ylim = None
+            self._last_image_shape = None
+            self._rgb_cache = None
+            self._clear_overlays()
             self.canvas.draw_idle()
             return
+
+        # Check if image dimensions changed (new dataset)
+        current_shape = data.field.shape
+        image_dimensions_changed = (self._last_image_shape != current_shape)
+        
+        # Only save zoom if image dimensions haven't changed
+        if not image_dimensions_changed:
+            self._save_axis_limits()
+        else:
+            # New image size - reset zoom
+            self._saved_xlim = None
+            self._saved_ylim = None
+            self._last_image_shape = current_shape
+        
+        # Clear and redraw
+        self.figure.clear()
+        self._rgb_cache = None
+        self._clear_overlays()
 
         # Render composite image
         rgb = self._render_composite(data, list(active_channels))
@@ -164,6 +194,10 @@ class CompositeView:
         ax.set_title('Composite Image', fontsize=14)
         ax.axis('off')
         ax.format_coord = lambda x, y: ''  # Disable matplotlib's coordinate display
+        
+        # Restore zoom/pan state only if dimensions unchanged
+        if not image_dimensions_changed:
+            self._restore_axis_limits(ax)
 
         self.canvas.draw_idle()
 
@@ -275,6 +309,26 @@ class CompositeView:
 
         canvas.draw()
 
+    def _save_axis_limits(self) -> None:
+        """Save current axis limits (zoom/pan state)."""
+        try:
+            axes = self.figure.get_axes()
+            if axes:
+                ax = axes[0]
+                self._saved_xlim = ax.get_xlim()
+                self._saved_ylim = ax.get_ylim()
+        except:
+            pass
+    
+    def _restore_axis_limits(self, ax) -> None:
+        """Restore saved axis limits (zoom/pan state)."""
+        try:
+            if self._saved_xlim is not None and self._saved_ylim is not None:
+                ax.set_xlim(self._saved_xlim)
+                ax.set_ylim(self._saved_ylim)
+        except:
+            pass
+    
     def _redraw_composite(self) -> None:
         """Redraw the composite image with current settings (fallback method)."""
         if not self._current_data or not self._current_data.data.has_data:

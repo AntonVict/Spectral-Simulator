@@ -63,14 +63,29 @@ class SpectralSystem:
                 z = (lam - m) / max(float(s), 1e-12)
                 pdf += w * np.exp(-0.5 * z * z)
         elif model == "empirical":
-            # Expect params: {"csv": path or array-like samples over lambdas}
-            data = fluor.params.get("samples")
-            if data is None:
-                raise ValueError("empirical model requires 'samples' array over lambdas grid")
-            arr = np.asarray(data, dtype=float)
-            if arr.shape != self.lambdas.shape:
-                raise ValueError("empirical samples must match lambdas shape")
-            pdf = np.clip(arr, 0.0, None)
+            # Support two formats:
+            # 1. Raw CSV data (csv_wavelengths + csv_intensities) - interpolates to current grid
+            # 2. Pre-interpolated samples (legacy) - must match grid exactly
+            
+            if "csv_wavelengths" in fluor.params and "csv_intensities" in fluor.params:
+                # Format 1: Raw CSV data - interpolate to current grid
+                csv_wl = np.asarray(fluor.params["csv_wavelengths"], dtype=float)
+                csv_int = np.asarray(fluor.params["csv_intensities"], dtype=float)
+                
+                # Interpolate to current wavelength grid
+                pdf = np.interp(self.lambdas, csv_wl, csv_int, left=0.0, right=0.0)
+                pdf = np.clip(pdf, 0.0, None)
+            elif "samples" in fluor.params:
+                # Format 2: Pre-interpolated samples (must match current grid)
+                data = fluor.params.get("samples")
+                if data is None:
+                    raise ValueError("empirical model requires 'samples' array over lambdas grid")
+                arr = np.asarray(data, dtype=float)
+                if arr.shape != self.lambdas.shape:
+                    raise ValueError(f"empirical samples shape {arr.shape} must match lambdas shape {self.lambdas.shape}")
+                pdf = np.clip(arr, 0.0, None)
+            else:
+                raise ValueError("empirical model requires either 'csv_wavelengths'+'csv_intensities' or 'samples'")
         elif model == "weibull":
             # Params: k (shape), lam (scale), shift (optional nm offset)
             k = float(fluor.params.get("k", 2.0))
