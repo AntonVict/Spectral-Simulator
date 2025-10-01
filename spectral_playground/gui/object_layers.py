@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 import copy
 import random
-from .object_templates import TemplateManager, ObjectTemplate
+from .object_templates import TemplateManager, ObjectTemplate, FluorophoreComponent
 
 
 class ObjectLayersManager:
@@ -92,40 +92,71 @@ class ObjectLayersManager:
         self._build_region_tab(editor_notebook)
         
     def _build_properties_tab(self, notebook):
-        """Build the properties tab for object editing."""
+        """Build the properties tab for object editing with template support."""
         basic_tab = ttk.Frame(notebook)
         notebook.add(basic_tab, text="Properties")
         
-        # Row 0: Fluor and Kind
-        ttk.Label(basic_tab, text="Fluorophore:").grid(row=0, column=0, sticky='w', padx=(0,4))
-        # Use a dropdown with available fluorophore names
-        self.fluor_combo = ttk.Combobox(basic_tab, textvariable=self.obj_fluor, 
+        # Row 0: Composition Mode Selection
+        mode_frame = ttk.LabelFrame(basic_tab, text="Composition Mode")
+        mode_frame.grid(row=0, column=0, columnspan=4, sticky='ew', pady=(0,8))
+        
+        ttk.Radiobutton(mode_frame, text="Single Fluorophore", 
+                       variable=self.composition_mode, value="single",
+                       command=self._on_composition_mode_change).pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(mode_frame, text="Multi-Fluorophore Template", 
+                       variable=self.composition_mode, value="template",
+                       command=self._on_composition_mode_change).pack(side=tk.LEFT, padx=4)
+        
+        # Row 1: Fluorophore/Template Selection (dynamic based on mode)
+        self.fluor_selection_frame = ttk.Frame(basic_tab)
+        self.fluor_selection_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0,8))
+        
+        # Single fluorophore selector
+        self.single_fluor_frame = ttk.Frame(self.fluor_selection_frame)
+        ttk.Label(self.single_fluor_frame, text="Fluorophore:").pack(side=tk.LEFT, padx=(0,4))
+        self.fluor_combo = ttk.Combobox(self.single_fluor_frame, textvariable=self.obj_fluor, 
                                        values=self._get_fluorophore_list(), 
-                                       state='readonly', width=10)
-        self.fluor_combo.grid(row=0, column=1, sticky='w')
+                                       state='readonly', width=15)
+        self.fluor_combo.pack(side=tk.LEFT)
         self.fluor_combo.bind('<<ComboboxSelected>>', lambda e: self._auto_save())
         
-        ttk.Label(basic_tab, text="Kind:").grid(row=0, column=2, sticky='w', padx=(12,4))
-        self.kind_combo = ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12)
-        self.kind_combo.grid(row=0, column=3, sticky='w')
+        # Template selector
+        self.template_frame = ttk.Frame(self.fluor_selection_frame)
+        ttk.Label(self.template_frame, text="Template:").pack(side=tk.LEFT, padx=(0,4))
+        self.template_combo = ttk.Combobox(self.template_frame, 
+                                          textvariable=self.composition_template,
+                                          values=self.template_manager.get_template_names(),
+                                          state='readonly', width=20)
+        self.template_combo.pack(side=tk.LEFT, padx=(0,4))
+        self.template_combo.bind('<<ComboboxSelected>>', lambda e: self._auto_save())
+        
+        ttk.Button(self.template_frame, text="Manage Templates", 
+                  command=self._open_template_manager, width=15).pack(side=tk.LEFT)
+        
+        # Row 2: Kind
+        ttk.Label(basic_tab, text="Kind:").grid(row=2, column=0, sticky='w', padx=(0,4))
+        self.kind_combo = ttk.Combobox(basic_tab, textvariable=self.obj_kind, 
+                                       values=["circles","boxes","gaussian_blobs","dots"], 
+                                       state='readonly', width=15)
+        self.kind_combo.grid(row=2, column=1, columnspan=3, sticky='w')
         self.kind_combo.bind('<<ComboboxSelected>>', lambda e: (self._on_kind_change(), self._auto_save()))
 
-        # Row 1: Count and Size
-        ttk.Label(basic_tab, text="Count:").grid(row=1, column=0, sticky='w', pady=(6,0))
-        count_entry = ttk.Entry(basic_tab, textvariable=self.obj_count, width=8)
-        count_entry.grid(row=1, column=1, sticky='w', pady=(6,0))
+        # Row 3: Count and Size
+        ttk.Label(basic_tab, text="Count:").grid(row=3, column=0, sticky='w', pady=(6,0))
+        count_entry = ttk.Entry(basic_tab, textvariable=self.obj_count, width=10)
+        count_entry.grid(row=3, column=1, sticky='w', pady=(6,0))
         count_entry.bind('<KeyRelease>', lambda e: self._auto_save())
         
         self.size_label = ttk.Label(basic_tab, text="Size (px):")
-        self.size_label.grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
-        self.size_entry = ttk.Entry(basic_tab, textvariable=self.obj_size, width=8)
-        self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
+        self.size_label.grid(row=3, column=2, sticky='w', padx=(12,4), pady=(6,0))
+        self.size_entry = ttk.Entry(basic_tab, textvariable=self.obj_size, width=10)
+        self.size_entry.grid(row=3, column=3, sticky='w', pady=(6,0))
         self.size_entry.bind('<KeyRelease>', lambda e: self._auto_save())
 
-        # Row 2: Intensity range
-        ttk.Label(basic_tab, text="Intensity:").grid(row=2, column=0, sticky='w', pady=(6,0))
+        # Row 4: Intensity range
+        ttk.Label(basic_tab, text="Intensity:").grid(row=4, column=0, sticky='w', pady=(6,0))
         intensity_frame = ttk.Frame(basic_tab)
-        intensity_frame.grid(row=2, column=1, columnspan=3, sticky='w', pady=(6,0))
+        intensity_frame.grid(row=4, column=1, columnspan=3, sticky='w', pady=(6,0))
         i_min_entry = ttk.Entry(intensity_frame, textvariable=self.obj_i_min, width=6)
         i_min_entry.pack(side=tk.LEFT)
         i_min_entry.bind('<KeyRelease>', lambda e: self._auto_save())
@@ -134,12 +165,15 @@ class ObjectLayersManager:
         i_max_entry.pack(side=tk.LEFT)
         i_max_entry.bind('<KeyRelease>', lambda e: self._auto_save())
         
-        # Row 3: Spot sigma (for Gaussian blobs and dots only)
+        # Row 5: Spot sigma (for Gaussian blobs and dots only)
         self.sigma_label = ttk.Label(basic_tab, text="Spot σ (px):")
-        self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
-        self.sigma_entry = ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=8)
-        self.sigma_entry.grid(row=3, column=1, columnspan=3, sticky='w', pady=(6,0))
+        self.sigma_label.grid(row=5, column=0, sticky='w', pady=(6,0))
+        self.sigma_entry = ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=10)
+        self.sigma_entry.grid(row=5, column=1, columnspan=3, sticky='w', pady=(6,0))
         self.sigma_entry.bind('<KeyRelease>', lambda e: self._auto_save())
+        
+        # Initialize mode UI
+        self._on_composition_mode_change()
 
     def _build_region_tab(self, notebook):
         """Build the region tab for object editing."""
@@ -250,10 +284,21 @@ class ObjectLayersManager:
         # Update fluorophore dropdown with current fluorophore list
         self.fluor_combo.config(values=self._get_fluorophore_list())
         
-        # Update UI with selected object data
-        fluor_idx = int(obj.get('fluor_index', 0))
-        fluor_name = self._fluorophore_index_to_name(fluor_idx)
-        self.obj_fluor.set(fluor_name)  # Set actual fluorophore name
+        # Check if object uses template or single fluorophore
+        if 'template_name' in obj:
+            # Template mode
+            self.composition_mode.set("template")
+            self.composition_template.set(obj['template_name'])
+            self._on_composition_mode_change()
+        else:
+            # Single fluorophore mode
+            self.composition_mode.set("single")
+            fluor_idx = int(obj.get('fluor_index', 0))
+            fluor_name = self._fluorophore_index_to_name(fluor_idx)
+            self.obj_fluor.set(fluor_name)
+            self._on_composition_mode_change()
+        
+        # Update other properties
         self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
         self.obj_count.set(int(obj.get('count', 50)))
         self.obj_size.set(float(obj.get('size_px', 6.0)))
@@ -290,24 +335,40 @@ class ObjectLayersManager:
             region_type = self.obj_region_type.get()
             region = {'type': region_type}
             if region_type == 'rect':
-                region.update({'x0': self.obj_x0.get(), 'y0': self.obj_y0.get(), 'w': self.obj_w.get(), 'h': self.obj_h.get()})
+                region.update({'x0': self.obj_x0.get(), 'y0': self.obj_y0.get(), 
+                              'w': self.obj_w.get(), 'h': self.obj_h.get()})
             elif region_type == 'circle':
-                region.update({'cx': self.obj_cx.get(), 'cy': self.obj_cy.get(), 'r': self.obj_r.get()})
+                region.update({'cx': self.obj_cx.get(), 'cy': self.obj_cy.get(), 
+                              'r': self.obj_r.get()})
             
-            # Convert fluorophore name (e.g., "F1") to 0-indexed integer
-            fluor_name = self.obj_fluor.get()
-            fluor_index = self._fluorophore_name_to_index(fluor_name)
-            
-            self.objects[idx] = {
-                'fluor_index': fluor_index,
-                'kind': self.obj_kind.get(),
-                'region': region,
-                'count': int(self.obj_count.get()),
-                'size_px': float(self.obj_size.get()),
-                'intensity_min': float(self.obj_i_min.get()),
-                'intensity_max': float(self.obj_i_max.get()),
-                'spot_sigma': float(self.obj_sigma.get()),
-            }
+            # Handle composition mode
+            if self.composition_mode.get() == "template":
+                template_name = self.composition_template.get()
+                self.objects[idx] = {
+                    'template_name': template_name,
+                    'kind': self.obj_kind.get(),
+                    'region': region,
+                    'count': int(self.obj_count.get()),
+                    'size_px': float(self.obj_size.get()),
+                    'intensity_min': float(self.obj_i_min.get()),
+                    'intensity_max': float(self.obj_i_max.get()),
+                    'spot_sigma': float(self.obj_sigma.get()),
+                }
+            else:
+                # Single fluorophore mode
+                fluor_name = self.obj_fluor.get()
+                fluor_index = self._fluorophore_name_to_index(fluor_name)
+                
+                self.objects[idx] = {
+                    'fluor_index': fluor_index,
+                    'kind': self.obj_kind.get(),
+                    'region': region,
+                    'count': int(self.obj_count.get()),
+                    'size_px': float(self.obj_size.get()),
+                    'intensity_min': float(self.obj_i_min.get()),
+                    'intensity_max': float(self.obj_i_max.get()),
+                    'spot_sigma': float(self.obj_sigma.get()),
+                }
             self._refresh_object_list()
             
             # Re-select the updated item
@@ -337,6 +398,223 @@ class ObjectLayersManager:
             self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
             self.sigma_label.grid_remove()
             self.sigma_entry.grid_remove()
+    
+    def _on_composition_mode_change(self):
+        """Handle composition mode change between single/template."""
+        mode = self.composition_mode.get()
+        
+        # Hide both frames
+        self.single_fluor_frame.pack_forget()
+        self.template_frame.pack_forget()
+        
+        # Show appropriate frame
+        if mode == "single":
+            self.single_fluor_frame.pack(fill=tk.X)
+        else:  # template
+            self.template_frame.pack(fill=tk.X)
+            # Refresh template list
+            self.template_combo.config(values=self.template_manager.get_template_names())
+    
+    def _open_template_manager(self):
+        """Open template manager dialog."""
+        dialog = tk.Toplevel(self.parent_frame)
+        dialog.title("Manage Multi-Fluorophore Templates")
+        dialog.geometry("700x550")
+        dialog.transient()
+        
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Template list
+        list_frame = ttk.LabelFrame(main_frame, text="Available Templates")
+        list_frame.pack(fill=tk.BOTH, expand=True, pady=(0,10))
+        
+        # Listbox with scrollbar
+        list_container = ttk.Frame(list_frame)
+        list_container.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        scrollbar = ttk.Scrollbar(list_container)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        template_listbox = tk.Listbox(list_container, yscrollcommand=scrollbar.set, height=10)
+        template_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.config(command=template_listbox.yview)
+        
+        # Populate template list
+        def refresh_list():
+            template_listbox.delete(0, tk.END)
+            for template in self.template_manager.templates:
+                # Show composition summary
+                comp_summary = ", ".join([f"F{c.fluor_index+1}:{c.ratio:.0%}" 
+                                         for c in template.composition])
+                template_listbox.insert(tk.END, f"{template.name} ({comp_summary})")
+        
+        refresh_list()
+        
+        # Template details frame
+        detail_frame = ttk.LabelFrame(main_frame, text="Template Details")
+        detail_frame.pack(fill=tk.X, pady=(0,10))
+        
+        detail_text = tk.Text(detail_frame, height=6, width=60, state='disabled')
+        detail_text.pack(padx=5, pady=5)
+        
+        def show_template_details(event=None):
+            """Show details of selected template."""
+            selection = template_listbox.curselection()
+            if not selection:
+                return
+            
+            idx = selection[0]
+            if idx >= len(self.template_manager.templates):
+                return
+            
+            template = self.template_manager.templates[idx]
+            
+            details = f"Name: {template.name}\n"
+            details += f"Description: {template.description}\n\n"
+            details += "Composition:\n"
+            for comp in template.composition:
+                fluor_name = self._fluorophore_index_to_name(comp.fluor_index)
+                details += f"  • {fluor_name}: {comp.ratio:.1%} "
+                if comp.ratio_noise > 0:
+                    details += f"(±{comp.ratio_noise:.1%} noise)"
+                details += "\n"
+            
+            detail_text.config(state='normal')
+            detail_text.delete('1.0', tk.END)
+            detail_text.insert('1.0', details)
+            detail_text.config(state='disabled')
+        
+        template_listbox.bind('<<ListboxSelect>>', show_template_details)
+        
+        # Buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill=tk.X)
+        
+        ttk.Button(button_frame, text="Create New", 
+                  command=lambda: self._create_custom_template(dialog, refresh_list)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(button_frame, text="Delete Selected", 
+                  command=lambda: self._delete_template(template_listbox, refresh_list)).pack(side=tk.LEFT, padx=2)
+        ttk.Button(button_frame, text="Close", command=dialog.destroy).pack(side=tk.RIGHT)
+    
+    def _create_custom_template(self, parent, refresh_callback):
+        """Open dialog to create a custom template."""
+        dialog = tk.Toplevel(parent)
+        dialog.title("Create Custom Template")
+        dialog.geometry("500x450")
+        dialog.transient(parent)
+        
+        main_frame = ttk.Frame(dialog)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Template name
+        ttk.Label(main_frame, text="Template Name:").grid(row=0, column=0, sticky='w', pady=5)
+        name_var = tk.StringVar(value="Custom Mix")
+        ttk.Entry(main_frame, textvariable=name_var, width=30).grid(row=0, column=1, sticky='w', pady=5)
+        
+        # Description
+        ttk.Label(main_frame, text="Description:").grid(row=1, column=0, sticky='w', pady=5)
+        desc_var = tk.StringVar(value="")
+        ttk.Entry(main_frame, textvariable=desc_var, width=30).grid(row=1, column=1, sticky='w', pady=5)
+        
+        # Composition builder
+        comp_frame = ttk.LabelFrame(main_frame, text="Fluorophore Composition")
+        comp_frame.grid(row=2, column=0, columnspan=2, sticky='ew', pady=10)
+        
+        # List of components
+        components = []  # List of (fluor_index, ratio, ratio_noise)
+        
+        comp_listbox = tk.Listbox(comp_frame, height=6)
+        comp_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        def refresh_comp_list():
+            comp_listbox.delete(0, tk.END)
+            total_ratio = sum(c[1] for c in components)
+            for fluor_idx, ratio, noise in components:
+                fluor_name = self._fluorophore_index_to_name(fluor_idx)
+                comp_listbox.insert(tk.END, 
+                                  f"{fluor_name}: {ratio:.1%} ±{noise:.1%} (Total: {total_ratio:.1%})")
+        
+        # Add component controls
+        add_frame = ttk.Frame(comp_frame)
+        add_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        fluor_names = self._get_fluorophore_list()
+        fluor_var = tk.StringVar(value=fluor_names[0] if fluor_names else "F1")
+        ratio_var = tk.DoubleVar(value=0.5)
+        noise_var = tk.DoubleVar(value=0.05)
+        
+        ttk.Label(add_frame, text="Fluorophore:").grid(row=0, column=0, sticky='w', padx=2)
+        ttk.Combobox(add_frame, textvariable=fluor_var, values=fluor_names, 
+                    state='readonly', width=10).grid(row=0, column=1, padx=2)
+        
+        ttk.Label(add_frame, text="Ratio:").grid(row=0, column=2, sticky='w', padx=2)
+        ttk.Entry(add_frame, textvariable=ratio_var, width=8).grid(row=0, column=3, padx=2)
+        
+        ttk.Label(add_frame, text="Noise:").grid(row=1, column=0, sticky='w', padx=2)
+        ttk.Entry(add_frame, textvariable=noise_var, width=8).grid(row=1, column=1, padx=2)
+        
+        def add_component():
+            fluor_idx = self._fluorophore_name_to_index(fluor_var.get())
+            components.append((fluor_idx, ratio_var.get(), noise_var.get()))
+            refresh_comp_list()
+        
+        def remove_component():
+            selection = comp_listbox.curselection()
+            if selection and components:
+                components.pop(selection[0])
+                refresh_comp_list()
+        
+        ttk.Button(add_frame, text="Add", command=add_component).grid(row=1, column=2, padx=2)
+        ttk.Button(add_frame, text="Remove", command=remove_component).grid(row=1, column=3, padx=2)
+        
+        # Save button
+        def save_template():
+            if not components:
+                from tkinter import messagebox
+                messagebox.showwarning("No Components", "Add at least one fluorophore component!")
+                return
+            
+            template = ObjectTemplate(
+                name=name_var.get(),
+                description=desc_var.get(),
+                composition=[FluorophoreComponent(f_idx, ratio, noise) 
+                            for f_idx, ratio, noise in components]
+            )
+            
+            self.template_manager.add_template(template)
+            refresh_callback()
+            self.log(f"Created template: {template.name}")
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        ttk.Button(button_frame, text="Save Template", command=save_template).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT)
+    
+    def _delete_template(self, listbox, refresh_callback):
+        """Delete selected template."""
+        selection = listbox.curselection()
+        if not selection:
+            return
+        
+        idx = selection[0]
+        if idx >= len(self.template_manager.templates):
+            return
+        
+        template = self.template_manager.templates[idx]
+        
+        # Don't allow deleting built-in single fluorophore templates
+        if template.name.endswith(" Only"):
+            from tkinter import messagebox
+            messagebox.showinfo("Cannot Delete", "Built-in templates cannot be deleted.")
+            return
+        
+        from tkinter import messagebox
+        if messagebox.askyesno("Confirm Delete", f"Delete template '{template.name}'?"):
+            self.template_manager.remove_template(template.name)
+            refresh_callback()
+            self.log(f"Deleted template: {template.name}")
             
     def _on_region_type_change(self, event=None):
         """Handle region type change."""

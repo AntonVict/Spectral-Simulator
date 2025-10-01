@@ -275,9 +275,13 @@ class PlaygroundGUI(tk.Tk):
     def _log(self, message: str) -> None:
         self.bottom.log(message)
     
-    def _open_full_inspector(self) -> None:
-        """Open the full inspector window."""
-        self.viewer._open_inspector()
+    def _open_full_inspector(self, object_ids: list = None) -> None:
+        """Open the full inspector window.
+        
+        Args:
+            object_ids: Optional list of object IDs to select when opening
+        """
+        self.viewer._open_inspector(object_ids)
     
     def _get_fluorophore_names(self) -> list:
         """Get list of fluorophore names from current dataset."""

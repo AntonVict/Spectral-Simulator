@@ -117,12 +117,23 @@ class ViewerPanel(ttk.Frame):
         self.composite_view._rgb_cache_dict.clear()
         self.on_channels_changed()  # This will trigger update_visualisation in main_gui
     
-    def _open_inspector(self) -> None:
-        """Open the Object Inspector window."""
+    def _open_inspector(self, object_ids: list = None) -> None:
+        """Open the Object Inspector window.
+        
+        Args:
+            object_ids: Optional list of object IDs to select when opening
+        """
         if self.inspector_window is not None and self.inspector_window.winfo_exists():
-            # Window already open, just raise it
+            # Window already open, just raise it and update selection
             self.inspector_window.lift()
             self.inspector_window.focus()
+            
+            # If object_ids provided, select them in existing inspector
+            if object_ids is not None:
+                for child in self.inspector_window.winfo_children():
+                    if isinstance(child, ObjectInspectorView):
+                        child.set_selected_objects(object_ids)
+                        break
             return
         
         # Create new inspector window
@@ -149,6 +160,10 @@ class ViewerPanel(ttk.Frame):
         
         # Auto-refresh on open
         inspector.refresh_objects()
+        
+        # Select objects if IDs provided
+        if object_ids is not None:
+            inspector.set_selected_objects(object_ids)
     
     def refresh_inspector(self) -> None:
         """Refresh the inspector window if it's open."""

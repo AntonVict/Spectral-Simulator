@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from typing import List, Dict, Any, Optional, Callable
 import numpy as np
+import pandas as pd
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
@@ -23,8 +24,9 @@ class ObjectInspectorView(ttk.Frame):
         self.get_data = get_data_callback
         self.get_fluorophore_names = get_fluorophore_names_callback
         
-        self.objects: List[Dict[str, Any]] = []
-        self.filtered_objects: List[Dict[str, Any]] = []
+        # Use pandas DataFrames for efficient filtering
+        self.df: pd.DataFrame = pd.DataFrame()  # Full dataset
+        self.filtered_df: pd.DataFrame = pd.DataFrame()  # After filters applied
         self.selected_objects: List[int] = []  # List of object IDs
         
         # Filter state
@@ -34,6 +36,7 @@ class ObjectInspectorView(ttk.Frame):
         self.filter_intensity_max = tk.DoubleVar(value=10.0)
         self.search_var = tk.StringVar()
         self.search_var.trace('w', lambda *args: self._apply_filters())
+        self.show_selected_only = tk.BooleanVar(value=False)
         
         self._build_ui()
         
@@ -124,14 +127,20 @@ class ObjectInspectorView(ttk.Frame):
         
     def _build_filters(self, parent: ttk.Frame):
         """Build filter controls."""
-        # Row 0: Search
+        # Row 0: Search and Show Selected Only
         ttk.Label(parent, text="Search:").grid(row=0, column=0, sticky='w', padx=2, pady=2)
         ttk.Entry(parent, textvariable=self.search_var, width=15).grid(row=0, column=1, sticky='ew', padx=2, pady=2)
         
+        # Show Selected Only checkbox
+        show_sel_cb = ttk.Checkbutton(parent, text="Selected Only", 
+                                      variable=self.show_selected_only,
+                                      command=self._apply_filters)
+        show_sel_cb.grid(row=0, column=2, sticky='w', padx=(10,2), pady=2)
+        
         # Row 0: Fluorophore filter
-        ttk.Label(parent, text="Fluorophore:").grid(row=0, column=2, sticky='w', padx=(10,2), pady=2)
+        ttk.Label(parent, text="Fluorophore:").grid(row=0, column=3, sticky='w', padx=(10,2), pady=2)
         self.fluor_combo = ttk.Combobox(parent, textvariable=self.filter_fluor, state='readonly', width=12)
-        self.fluor_combo.grid(row=0, column=3, sticky='ew', padx=2, pady=2)
+        self.fluor_combo.grid(row=0, column=4, sticky='ew', padx=2, pady=2)
         self.fluor_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
         # Row 1: Type filter
@@ -145,16 +154,16 @@ class ObjectInspectorView(ttk.Frame):
         # Row 1: Intensity range
         ttk.Label(parent, text="Intensity:").grid(row=1, column=2, sticky='w', padx=(10,2), pady=2)
         intensity_frame = ttk.Frame(parent)
-        intensity_frame.grid(row=1, column=3, sticky='ew', padx=2, pady=2)
+        intensity_frame.grid(row=1, column=3, columnspan=2, sticky='ew', padx=2, pady=2)
         ttk.Entry(intensity_frame, textvariable=self.filter_intensity_min, width=6).pack(side=tk.LEFT)
         ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
         ttk.Entry(intensity_frame, textvariable=self.filter_intensity_max, width=6).pack(side=tk.LEFT)
         
         # Apply button
-        ttk.Button(parent, text="Apply", command=self._apply_filters, width=8).grid(row=1, column=4, padx=4, pady=2)
+        ttk.Button(parent, text="Apply", command=self._apply_filters, width=8).grid(row=1, column=5, padx=4, pady=2)
         
         parent.columnconfigure(1, weight=1)
-        parent.columnconfigure(3, weight=1)
+        parent.columnconfigure(4, weight=1)
     
     def _build_details_panel(self, parent: ttk.Frame):
         """Build details panel for selected object(s)."""
@@ -192,14 +201,23 @@ class ObjectInspectorView(ttk.Frame):
         """Refresh object list from current dataset."""
         data = self.get_data()
         if not data or not data.has_data:
-            self.objects = []
-            self.filtered_objects = []
+            self.df = pd.DataFrame()
+            self.filtered_df = pd.DataFrame()
             self._update_tree()
             self._update_stats()
             return
         
-        # Get objects from metadata
-        self.objects = data.metadata.get('objects', [])
+        # Get objects from metadata and convert to DataFrame
+        objects_list = data.metadata.get('objects', [])
+        if not objects_list:
+            self.df = pd.DataFrame()
+            self.filtered_df = pd.DataFrame()
+            self._update_tree()
+            self._update_stats()
+            return
+        
+        # Convert to DataFrame - pandas handles list of dicts naturally
+        self.df = pd.DataFrame(objects_list)
         
         # Update fluorophore filter options
         fluor_names = self.get_fluorophore_names()
@@ -209,56 +227,59 @@ class ObjectInspectorView(ttk.Frame):
         self._apply_filters()
         
     def _apply_filters(self):
-        """Apply current filters to object list."""
-        if not self.objects:
-            self.filtered_objects = []
+        """Apply current filters to object list using pandas."""
+        if self.df.empty:
+            self.filtered_df = pd.DataFrame()
             self._update_tree()
             self._update_stats()
             return
         
-        filtered = []
-        search_text = self.search_var.get().lower()
-        fluor_filter = self.filter_fluor.get()
+        # Start with full dataset
+        filtered = self.df.copy()
+        
+        # Filter 1: Show selected only (if enabled)
+        if self.show_selected_only.get() and self.selected_objects:
+            filtered = filtered[filtered['id'].isin(self.selected_objects)]
+        
+        # Filter 2: Type filter
         type_filter = self.filter_type.get()
+        if type_filter != "All":
+            filtered = filtered[filtered['type'] == type_filter]
+        
+        # Filter 3: Intensity range
         intensity_min = self.filter_intensity_min.get()
         intensity_max = self.filter_intensity_max.get()
+        filtered = filtered[
+            (filtered['base_intensity'] >= intensity_min) &
+            (filtered['base_intensity'] <= intensity_max)
+        ]
         
-        fluor_names = self.get_fluorophore_names()
-        
-        for obj in self.objects:
-            # Search filter (ID or position)
-            if search_text:
-                obj_text = f"{obj['id']} {obj['position']}"
-                if search_text not in obj_text.lower():
-                    continue
-            
-            # Type filter
-            if type_filter != "All" and obj.get('type', '') != type_filter:
-                continue
-            
-            # Intensity filter
-            if obj.get('base_intensity', 0) < intensity_min or obj.get('base_intensity', 0) > intensity_max:
-                continue
-            
-            # Fluorophore filter
-            if fluor_filter != "All":
-                # Check if object has this fluorophore
-                has_fluor = False
-                try:
-                    fluor_idx = fluor_names.index(fluor_filter)
-                    for comp in obj.get('composition', []):
-                        if comp['fluor_index'] == fluor_idx:
-                            has_fluor = True
-                            break
-                except (ValueError, KeyError):
-                    pass
+        # Filter 4: Fluorophore filter
+        fluor_filter = self.filter_fluor.get()
+        if fluor_filter != "All":
+            fluor_names = self.get_fluorophore_names()
+            try:
+                fluor_idx = fluor_names.index(fluor_filter)
+                # Filter by checking if fluorophore is in composition
+                def has_fluorophore(composition):
+                    return any(c['fluor_index'] == fluor_idx for c in composition)
                 
-                if not has_fluor:
-                    continue
-            
-            filtered.append(obj)
+                filtered = filtered[filtered['composition'].apply(has_fluorophore)]
+            except (ValueError, KeyError):
+                pass  # Invalid fluorophore, skip filter
         
-        self.filtered_objects = filtered
+        # Filter 5: Text search
+        search_text = self.search_var.get().lower()
+        if search_text:
+            # Search in ID and position columns
+            def matches_search(row):
+                id_str = str(row['id']).lower()
+                pos_str = str(row['position']).lower()
+                return search_text in id_str or search_text in pos_str
+            
+            filtered = filtered[filtered.apply(matches_search, axis=1)]
+        
+        self.filtered_df = filtered
         self._update_tree()
         self._update_stats()
     
@@ -268,15 +289,18 @@ class ObjectInspectorView(ttk.Frame):
         for item in self.tree.get_children():
             self.tree.delete(item)
         
+        if self.filtered_df.empty:
+            return
+        
         # Get fluorophore names
         fluor_names = self.get_fluorophore_names()
         
-        # Add filtered objects
-        for obj in self.filtered_objects:
-            obj_id = obj['id']
+        # Add filtered objects to tree
+        for idx, row in self.filtered_df.iterrows():
+            obj_id = row['id']
             
             # Get fluorophore composition string
-            comp = obj.get('composition', [])
+            comp = row['composition']
             if len(comp) == 1:
                 fluor_str = fluor_names[comp[0]['fluor_index']] if comp[0]['fluor_index'] < len(fluor_names) else f"F{comp[0]['fluor_index']+1}"
             else:
@@ -286,17 +310,17 @@ class ObjectInspectorView(ttk.Frame):
                     fluor_parts.append(f"{fname}({c['ratio']:.0%})")
                 fluor_str = "+".join(fluor_parts)
             
-            obj_type = obj.get('type', 'unknown')
-            pos = obj.get('position', (0, 0))
+            obj_type = row['type']
+            pos = row['position']
             pos_str = f"({pos[0]:.1f}, {pos[1]:.1f})"
-            intensity = obj.get('base_intensity', 0.0)
+            intensity = row['base_intensity']
             
             self.tree.insert('', 'end', iid=str(obj_id), values=(obj_id, fluor_str, obj_type, pos_str, f"{intensity:.3f}"))
     
     def _update_stats(self):
         """Update statistics label."""
-        total = len(self.objects)
-        filtered = len(self.filtered_objects)
+        total = len(self.df)
+        filtered = len(self.filtered_df)
         selected = len(self.selected_objects)
         
         if total == 0:
@@ -326,8 +350,10 @@ class ObjectInspectorView(ttk.Frame):
         
         if len(self.selected_objects) == 1:
             obj_id = self.selected_objects[0]
-            obj = next((o for o in self.objects if o['id'] == obj_id), None)
-            if obj:
+            # Get object from DataFrame
+            obj_row = self.df[self.df['id'] == obj_id]
+            if not obj_row.empty:
+                obj = obj_row.iloc[0].to_dict()
                 self._show_single_object_details(obj)
         else:
             self._show_multiple_objects_summary()
@@ -391,6 +417,9 @@ class ObjectInspectorView(ttk.Frame):
             elif region_type == 'circle':
                 ttk.Label(region_frame, text=f"Circle: center ({region.get('cx'):.1f}, {region.get('cy'):.1f}) "
                          f"r={region.get('r'):.1f}").pack(anchor='w', padx=4, pady=2)
+        
+        # Spectral profile
+        self._add_spectral_profile(obj)
     
     def _show_multiple_objects_summary(self):
         """Show summary for multiple selected objects."""
@@ -399,33 +428,31 @@ class ObjectInspectorView(ttk.Frame):
         summary_frame = ttk.LabelFrame(self.details_content, text="Selection Summary")
         summary_frame.pack(fill=tk.X, padx=4, pady=4)
         
-        # Get selected objects
-        selected_objs = [o for o in self.objects if o['id'] in self.selected_objects]
+        # Get selected objects from DataFrame
+        selected_df = self.df[self.df['id'].isin(self.selected_objects)]
         
-        # Calculate statistics
-        intensities = [o.get('base_intensity', 0) for o in selected_objs]
-        positions = [o.get('position', (0, 0)) for o in selected_objs]
+        if selected_df.empty:
+            return
         
-        ttk.Label(summary_frame, text=f"Count: {len(selected_objs)}").pack(anchor='w', padx=4, pady=2)
+        # Calculate statistics using pandas
+        ttk.Label(summary_frame, text=f"Count: {len(selected_df)}").pack(anchor='w', padx=4, pady=2)
         
-        if intensities:
-            ttk.Label(summary_frame, text=f"Intensity: min={min(intensities):.3f}, "
-                     f"max={max(intensities):.3f}, mean={np.mean(intensities):.3f}").pack(anchor='w', padx=4, pady=2)
+        intensities = selected_df['base_intensity']
+        if not intensities.empty:
+            ttk.Label(summary_frame, text=f"Intensity: min={intensities.min():.3f}, "
+                     f"max={intensities.max():.3f}, mean={intensities.mean():.3f}").pack(anchor='w', padx=4, pady=2)
         
         # Type distribution
-        types = {}
-        for obj in selected_objs:
-            t = obj.get('type', 'unknown')
-            types[t] = types.get(t, 0) + 1
+        type_counts = selected_df['type'].value_counts()
         
         type_frame = ttk.LabelFrame(self.details_content, text="Type Distribution")
         type_frame.pack(fill=tk.X, padx=4, pady=4)
-        for t, count in types.items():
-            ttk.Label(type_frame, text=f"{t}: {count}").pack(anchor='w', padx=4, pady=2)
+        for obj_type, count in type_counts.items():
+            ttk.Label(type_frame, text=f"{obj_type}: {count}").pack(anchor='w', padx=4, pady=2)
     
     def _sort_by(self, column: str):
         """Sort objects by column."""
-        # TODO: Implement sorting
+        # TODO: Implement sorting with pandas
         pass
     
     def _clear_selection(self):
@@ -435,9 +462,46 @@ class ObjectInspectorView(ttk.Frame):
         self._update_stats()
         self._show_object_details()
     
+    def set_selected_objects(self, object_ids: List[int]):
+        """Programmatically select objects by their IDs.
+        
+        Args:
+            object_ids: List of object IDs to select
+        """
+        # Temporarily unbind selection event to prevent multiple triggers
+        # This prevents _on_object_select from being called for each item added
+        self.tree.unbind('<<TreeviewSelect>>')
+        
+        try:
+            # Clear current selection
+            self.tree.selection_remove(self.tree.selection())
+            
+            # Find all tree items matching the object IDs
+            items_to_select = []
+            for obj_id in object_ids:
+                for item in self.tree.get_children():
+                    if self.tree.item(item)['values'][0] == obj_id:
+                        items_to_select.append(item)
+                        break  # Found this ID, move to next
+            
+            # Select all items at once (more efficient than adding one by one)
+            if items_to_select:
+                self.tree.selection_set(items_to_select)
+                # Scroll to make the first selected item visible
+                self.tree.see(items_to_select[0])
+            
+            # Update internal state
+            self.selected_objects = object_ids
+            self._update_stats()
+            self._show_object_details()
+            
+        finally:
+            # Always rebind the event handler, even if an error occurs
+            self.tree.bind('<<TreeviewSelect>>', self._on_object_select)
+    
     def _export_csv(self):
-        """Export object list to CSV."""
-        if not self.filtered_objects:
+        """Export filtered object list to CSV using pandas."""
+        if self.filtered_df.empty:
             messagebox.showinfo("No Objects", "No objects to export.")
             return
         
@@ -452,41 +516,39 @@ class ObjectInspectorView(ttk.Frame):
             return
         
         try:
-            import csv
             fluor_names = self.get_fluorophore_names()
             
-            with open(filepath, 'w', newline='') as f:
-                writer = csv.writer(f)
+            # Prepare export data
+            export_data = []
+            for idx, row in self.filtered_df.iterrows():
+                pos = row['position']
+                obj_type = row['type']
+                size = row.get('spot_sigma' if obj_type in ('gaussian_blobs', 'dots') else 'size_px', 0)
                 
-                # Header
-                writer.writerow(['ID', 'Type', 'Position_Y', 'Position_X', 'Base_Intensity', 
-                               'Size_or_Sigma', 'Fluorophores', 'Composition_Ratios'])
+                comp = row['composition']
+                fluor_list = []
+                ratio_list = []
+                for c in comp:
+                    fname = fluor_names[c['fluor_index']] if c['fluor_index'] < len(fluor_names) else f"F{c['fluor_index']+1}"
+                    fluor_list.append(fname)
+                    ratio_list.append(f"{c['ratio']:.4f}")
                 
-                # Data
-                for obj in self.filtered_objects:
-                    pos = obj.get('position', (0, 0))
-                    size = obj.get('spot_sigma' if obj.get('type') in ('gaussian_blobs', 'dots') else 'size_px', 0)
-                    
-                    comp = obj.get('composition', [])
-                    fluor_list = []
-                    ratio_list = []
-                    for c in comp:
-                        fname = fluor_names[c['fluor_index']] if c['fluor_index'] < len(fluor_names) else f"F{c['fluor_index']+1}"
-                        fluor_list.append(fname)
-                        ratio_list.append(f"{c['ratio']:.4f}")
-                    
-                    writer.writerow([
-                        obj['id'],
-                        obj.get('type', 'unknown'),
-                        f"{pos[0]:.4f}",
-                        f"{pos[1]:.4f}",
-                        f"{obj.get('base_intensity', 0):.4f}",
-                        f"{size:.4f}",
-                        '+'.join(fluor_list),
-                        '+'.join(ratio_list)
-                    ])
+                export_data.append({
+                    'ID': row['id'],
+                    'Type': obj_type,
+                    'Position_Y': f"{pos[0]:.4f}",
+                    'Position_X': f"{pos[1]:.4f}",
+                    'Base_Intensity': f"{row['base_intensity']:.4f}",
+                    'Size_or_Sigma': f"{size:.4f}",
+                    'Fluorophores': '+'.join(fluor_list),
+                    'Composition_Ratios': '+'.join(ratio_list)
+                })
             
-            messagebox.showinfo("Export Complete", f"Exported {len(self.filtered_objects)} objects to:\n{filepath}")
+            # Use pandas to export
+            export_df = pd.DataFrame(export_data)
+            export_df.to_csv(filepath, index=False)
+            
+            messagebox.showinfo("Export Complete", f"Exported {len(export_data)} objects to:\n{filepath}")
         except Exception as e:
             messagebox.showerror("Export Failed", f"Failed to export objects:\n{str(e)}")
     
@@ -557,4 +619,84 @@ class ObjectInspectorView(ttk.Frame):
             # Fallback if view generation fails
             ttk.Label(zoom_frame, text=f"Could not generate view: {str(e)}", 
                      foreground="gray").pack(pady=10)
+    
+    def _add_spectral_profile(self, obj: Dict[str, Any]):
+        """Add spectral profile plot for the object's fluorophore composition."""
+        data = self.get_data()
+        if not data or not data.has_data or not data.spectral:
+            return
+        
+        composition = obj.get('composition', [])
+        if not composition:
+            return
+        
+        try:
+            spectral = data.spectral
+            lambdas = spectral.lambdas
+            fluor_names = self.get_fluorophore_names()
+            
+            # Calculate combined spectrum
+            combined_spectrum = np.zeros_like(lambdas)
+            individual_spectra = []
+            
+            for comp in composition:
+                fluor_idx = comp['fluor_index']
+                ratio = comp['ratio']
+                
+                if fluor_idx < len(spectral.fluors):
+                    fluor = spectral.fluors[fluor_idx]
+                    # Get normalized PDF for this fluorophore
+                    pdf = spectral._pdf(fluor)
+                    # Weight by ratio
+                    weighted_pdf = pdf * ratio
+                    combined_spectrum += weighted_pdf
+                    
+                    # Store for individual plotting
+                    fluor_name = fluor_names[fluor_idx] if fluor_idx < len(fluor_names) else f"F{fluor_idx+1}"
+                    individual_spectra.append((fluor_name, pdf, ratio))
+            
+            # Create spectral profile frame
+            spectrum_frame = ttk.LabelFrame(self.details_content, text="Spectral Profile")
+            spectrum_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+            
+            # Create matplotlib figure
+            fig = Figure(figsize=(5, 3), dpi=80)
+            ax = fig.add_subplot(111)
+            
+            # Plot individual fluorophore spectra (normalized)
+            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', 
+                     '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+            
+            for idx, (name, pdf, ratio) in enumerate(individual_spectra):
+                pdf_norm = pdf / (np.max(pdf) + 1e-9)
+                color = colors[idx % len(colors)]
+                ax.plot(lambdas, pdf_norm, '--', color=color, alpha=0.6, linewidth=1.5,
+                       label=f'{name} ({ratio:.1%})')
+            
+            # Plot combined spectrum (bold)
+            if np.max(combined_spectrum) > 0:
+                combined_norm = combined_spectrum / np.max(combined_spectrum)
+                ax.plot(lambdas, combined_norm, 'k-', linewidth=2.5, 
+                       label='Combined', zorder=10)
+            
+            ax.set_xlabel('Wavelength (nm)', fontsize=9)
+            ax.set_ylabel('Normalized Intensity', fontsize=9)
+            ax.set_title('Object Spectral Profile', fontsize=10, fontweight='bold')
+            ax.grid(True, alpha=0.3, linestyle='--')
+            ax.legend(fontsize=8, loc='best')
+            ax.tick_params(labelsize=8)
+            
+            fig.tight_layout()
+            
+            # Add canvas to frame
+            canvas = FigureCanvasTkAgg(fig, spectrum_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+            
+        except Exception as e:
+            # Show error message if spectral profile generation fails
+            error_label = ttk.Label(self.details_content, 
+                                   text=f"Could not generate spectral profile: {str(e)}", 
+                                   foreground="gray")
+            error_label.pack(pady=10)
 

@@ -40,6 +40,17 @@ A desktop application for synthesizing and exploring synthetic multispectral flu
 - **Individual Abundance Maps**: Per-fluorophore spatial distributions with colormap visualization
 - **Expandable Views**: Full-screen modes for detailed inspection
 
+### Object Inspection Tools
+- **Quick Inspector**: Compact panel showing selected objects with zoomed view
+- **Full Object Inspector**: Detailed analysis window with:
+  - Searchable and filterable object table
+  - Multi-column sorting
+  - "Show Selected Only" filter for focused analysis
+  - Individual object details with properties and composition
+  - Spectral profile visualization for single objects and mixtures
+  - CSV export of filtered objects
+- **Double-Click Navigation**: Quick access from quick inspector to full inspector with selection preserved
+
 ### Simulation Controls
 - **Background Models**: Constant or low-rank structured backgrounds
 - **Image Dimensions**: Configurable field size and pixel resolution
@@ -55,7 +66,7 @@ A desktop application for synthesizing and exploring synthetic multispectral flu
 
 ### Prerequisites
 - Python 3.9 or later
-- Required packages: numpy, scipy, matplotlib, tkinter (usually included with Python)
+- Required packages: numpy, scipy, matplotlib, pandas, tkinter (usually included with Python)
 
 ### Install from Source
 ```bash
@@ -206,5 +217,5 @@ This means you are free to use, modify, and distribute this software for any pur
 ## Version Information
 - Current Version: 0.1.0
 - Python Requirements: ≥3.9
-- Key Dependencies: numpy≥1.24, scipy≥1.10, matplotlib≥3.6
+- Key Dependencies: numpy≥1.24, scipy≥1.10, matplotlib≥3.6, pandas≥1.5
 

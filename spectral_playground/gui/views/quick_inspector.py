@@ -83,6 +83,9 @@ class QuickInspectorPanel(ttk.Frame):
         self.object_text.configure(yscrollcommand=scrollbar.set)
         scrollbar.grid(row=0, column=1, sticky='ns')
         
+        # Bind double-click to open full inspector
+        self.object_text.bind('<Double-Button-1>', self._on_object_double_click)
+        
         # Initial message
         self._update_object_list()
     
@@ -295,4 +298,13 @@ class QuickInspectorPanel(ttk.Frame):
         """Clear current selection."""
         self.selected_object_ids = []
         self._update_display()
+    
+    def _on_object_double_click(self, event):
+        """Handle double-click on object list to open full inspector."""
+        # Only proceed if we have selected objects
+        if not self.selected_object_ids:
+            return
+        
+        # Open full inspector with current selection
+        self.on_open_full_inspector(self.selected_object_ids)
 
