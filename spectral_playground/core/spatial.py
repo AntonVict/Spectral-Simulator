@@ -181,11 +181,12 @@ class AbundanceField:
         field: FieldSpec,
         objects: list,
         base: Array | None = None,
-    ) -> Array:
+        track_objects: bool = True,
+    ) -> tuple[Array, list]:
         """Build abundance maps from a list of object specs.
 
         Each object is a dict with keys:
-          - 'fluor_index': int (0..K-1)
+          - 'fluor_index': int (0..K-1) OR 'composition': list of fluorophore compositions
           - 'kind': 'circles' | 'boxes' | 'gaussian_blobs' | 'dots'
           - 'region': {'type': 'full' | 'rect' | 'circle', ...}
           - 'count': int
@@ -193,6 +194,15 @@ class AbundanceField:
           - 'intensity_min': float
           - 'intensity_max': float
           - 'spot_sigma': float (for 'dots'/'gaussian_blobs')
+          
+        Composition format (for multi-fluorophore objects):
+          'composition': [
+              {'fluor_index': 0, 'ratio': 0.6, 'ratio_noise': 0.1},
+              {'fluor_index': 1, 'ratio': 0.4, 'ratio_noise': 0.05},
+          ]
+        
+        Returns:
+            tuple: (A_maps array of shape (K, P), list of generated object instances)
         """
         H, W = field.shape
         P = H * W
@@ -283,35 +293,102 @@ class AbundanceField:
             local_mask = mask[y_min:y_max, x_min:x_max]
             map_ref[y_min:y_max, x_min:x_max] += (amplitude * g) * local_mask
 
-        for obj in (objects or []):
-            k = int(obj.get("fluor_index", 0))
-            if not (0 <= k < K):
+        generated_objects = []
+        object_id_counter = 0
+        
+        def get_composition(obj: dict) -> list:
+            """Extract fluorophore composition, handling both single and multi-fluorophore objects."""
+            if 'composition' in obj:
+                return obj['composition']
+            else:
+                # Legacy single fluorophore format
+                return [{
+                    'fluor_index': obj.get('fluor_index', 0),
+                    'ratio': 1.0,
+                    'ratio_noise': 0.0
+                }]
+        
+        for obj_spec in (objects or []):
+            composition = get_composition(obj_spec)
+            
+            # Validate fluorophore indices
+            valid_composition = [c for c in composition if 0 <= c['fluor_index'] < K]
+            if not valid_composition:
                 continue
-            kind = obj.get("kind", "gaussian_blobs")
-            region = obj.get("region", {"type": "full"})
-            cnt = int(obj.get("count", 50))
-            size_px = float(obj.get("size_px", 6.0))
-            imin = float(obj.get("intensity_min", 0.5))
-            imax = float(obj.get("intensity_max", 1.5))
-            spot_sigma = float(obj.get("spot_sigma", max(1.0, size_px / 3.0)))
+                
+            kind = obj_spec.get("kind", "gaussian_blobs")
+            region = obj_spec.get("region", {"type": "full"})
+            cnt = int(obj_spec.get("count", 50))
+            size_px = float(obj_spec.get("size_px", 6.0))
+            imin = float(obj_spec.get("intensity_min", 0.5))
+            imax = float(obj_spec.get("intensity_max", 1.5))
+            spot_sigma = float(obj_spec.get("spot_sigma", max(1.0, size_px / 3.0)))
 
             mask = region_mask(region)
 
-            # Sampling positions across full image; region mask applied to shape
+            # Generate individual objects
             for _ in range(max(0, cnt)):
                 cy = int(self.rng.integers(0, H))
                 cx = int(self.rng.integers(0, W))
-                amp = float(self.rng.uniform(imin, imax))
-                if kind == "circles":
-                    add_circle(A_maps[k], cy, cx, radius=size_px, amplitude=amp, mask=mask)
-                elif kind == "boxes":
-                    add_box(A_maps[k], cy, cx, half=int(max(1, round(size_px))), amplitude=amp, mask=mask)
-                elif kind in ("gaussian_blobs", "dots"):
-                    add_gaussian(A_maps[k], cy, cx, sigma=spot_sigma, amplitude=amp, mask=mask)
+                base_amp = float(self.rng.uniform(imin, imax))
+                
+                # Sample actual ratios with noise for this object
+                actual_ratios = []
+                for comp in valid_composition:
+                    ratio = float(comp['ratio'])
+                    noise = float(comp.get('ratio_noise', 0.0))
+                    if noise > 0:
+                        actual_ratio = max(0.0, float(self.rng.normal(ratio, noise)))
+                    else:
+                        actual_ratio = ratio
+                    actual_ratios.append(actual_ratio)
+                
+                # Normalize ratios to sum to 1
+                total = sum(actual_ratios)
+                if total > 0:
+                    actual_ratios = [r / total for r in actual_ratios]
                 else:
-                    raise ValueError(f"Unknown object kind: {kind}")
+                    actual_ratios = [1.0 / len(actual_ratios)] * len(actual_ratios)
+                
+                # Record object instance if tracking enabled
+                if track_objects:
+                    obj_instance = {
+                        'id': object_id_counter,
+                        'position': (float(cy), float(cx)),
+                        'type': kind,
+                        'base_intensity': float(base_amp),
+                        'size_px': float(size_px),
+                        'spot_sigma': float(spot_sigma),
+                        'region': region.copy(),
+                        'composition': []
+                    }
+                    
+                    # Store actual composition with intensities
+                    for comp, actual_ratio in zip(valid_composition, actual_ratios):
+                        obj_instance['composition'].append({
+                            'fluor_index': int(comp['fluor_index']),
+                            'ratio': float(actual_ratio),
+                            'intensity': float(base_amp * actual_ratio)
+                        })
+                    
+                    generated_objects.append(obj_instance)
+                    object_id_counter += 1
+                
+                # Add to abundance maps for each fluorophore in composition
+                for comp, actual_ratio in zip(valid_composition, actual_ratios):
+                    k = int(comp['fluor_index'])
+                    amp = float(base_amp * actual_ratio)
+                    
+                    if kind == "circles":
+                        add_circle(A_maps[k], cy, cx, radius=size_px, amplitude=amp, mask=mask)
+                    elif kind == "boxes":
+                        add_box(A_maps[k], cy, cx, half=int(max(1, round(size_px))), amplitude=amp, mask=mask)
+                    elif kind in ("gaussian_blobs", "dots"):
+                        add_gaussian(A_maps[k], cy, cx, sigma=spot_sigma, amplitude=amp, mask=mask)
+                    else:
+                        raise ValueError(f"Unknown object kind: {kind}")
 
-        return A_maps.reshape(K, P)
+        return A_maps.reshape(K, P), generated_objects
 
 
 class PSF:

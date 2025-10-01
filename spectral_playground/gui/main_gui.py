@@ -54,7 +54,14 @@ class PlaygroundGUI(tk.Tk):
         )
         self.viewer.grid(row=0, column=1, sticky='nsew')
 
-        self.bottom = BottomPanel(self, self.state, on_fluor_selection_changed=self._on_fluor_selection_changed)
+        self.bottom = BottomPanel(
+            self, 
+            self.state, 
+            on_fluor_selection_changed=self._on_fluor_selection_changed,
+            on_open_full_inspector=self._open_full_inspector,
+            get_data_callback=lambda: self.state.data,
+            get_fluorophore_names_callback=self._get_fluorophore_names
+        )
         self.bottom.grid(row=1, column=0, columnspan=2, sticky='nsew', padx=8, pady=8)
         self.bottom.configure_expanders(self._expand_spectral_view, self._expand_abundance_view)
 
@@ -204,6 +211,8 @@ class PlaygroundGUI(tk.Tk):
         fluor_names = [fl.name or f'F{i + 1}' for i, fl in enumerate(self.state.data.spectral.fluors)]
         self.bottom.set_fluorophores(fluor_names)
         self.update_visualisation()
+        self.viewer.refresh_inspector()  # Refresh full inspector if open
+        self.bottom.quick_inspector.refresh_objects()  # Refresh quick inspector
         self._log(message)
 
     def _on_channels_changed(self) -> None:
@@ -265,6 +274,21 @@ class PlaygroundGUI(tk.Tk):
 
     def _log(self, message: str) -> None:
         self.bottom.log(message)
+    
+    def _open_full_inspector(self) -> None:
+        """Open the full inspector window."""
+        self.viewer._open_inspector()
+    
+    def _get_fluorophore_names(self) -> list:
+        """Get list of fluorophore names from current dataset."""
+        if self.state.data and self.state.data.spectral:
+            return [f.name for f in self.state.data.spectral.fluors]
+        return []
+    
+    def _on_composite_object_selection(self, object_ids: list) -> None:
+        """Handle object selection from composite view."""
+        # Update QuickInspector
+        self.bottom.quick_inspector.set_selection(object_ids)
 
 
 def main() -> None:

@@ -7,6 +7,7 @@ from typing import Callable, Iterable, List
 
 from .state import PlaygroundState
 from .views.composite import CompositeView
+from .views.inspector import ObjectInspectorView
 
 
 class ViewerPanel(ttk.Frame):
@@ -69,9 +70,12 @@ class ViewerPanel(ttk.Frame):
         top_controls = ttk.Frame(image_frame)
         top_controls.grid(row=0, column=0, sticky='ew')
         ttk.Label(top_controls, text='Composite View').pack(side=tk.LEFT)
+        ttk.Button(top_controls, text='Inspector', command=self._open_inspector, width=12).pack(side=tk.RIGHT, padx=2)
         ttk.Button(top_controls, text='Expand', command=on_expand_composite, width=12).pack(side=tk.RIGHT)
 
         self.composite_view = CompositeView(image_frame, on_visual_settings_changed=self._on_composite_visual_settings_changed)
+        self.composite_view.set_object_selection_callback(self._on_object_selection_changed)
+        self.inspector_window = None
 
     def set_channels(self, names: Iterable[str]) -> None:
         for widget in self.channel_checks_frame.winfo_children():
@@ -109,4 +113,55 @@ class ViewerPanel(ttk.Frame):
     
     def _on_composite_visual_settings_changed(self) -> None:
         """Called when composite visual settings change - trigger redraw."""
+        # Clear RGB cache to force re-render with new visual settings
+        self.composite_view._rgb_cache_dict.clear()
         self.on_channels_changed()  # This will trigger update_visualisation in main_gui
+    
+    def _open_inspector(self) -> None:
+        """Open the Object Inspector window."""
+        if self.inspector_window is not None and self.inspector_window.winfo_exists():
+            # Window already open, just raise it
+            self.inspector_window.lift()
+            self.inspector_window.focus()
+            return
+        
+        # Create new inspector window
+        self.inspector_window = tk.Toplevel(self)
+        self.inspector_window.title("Object Inspector")
+        self.inspector_window.geometry("1000x700")
+        
+        # Get callbacks for the inspector
+        def get_data():
+            return self.state.data
+        
+        def get_fluorophore_names():
+            if self.state.data and self.state.data.spectral:
+                return [f.name for f in self.state.data.spectral.fluors]
+            return []
+        
+        # Create inspector view
+        inspector = ObjectInspectorView(
+            self.inspector_window,
+            get_data_callback=get_data,
+            get_fluorophore_names_callback=get_fluorophore_names
+        )
+        inspector.pack(fill=tk.BOTH, expand=True)
+        
+        # Auto-refresh on open
+        inspector.refresh_objects()
+    
+    def refresh_inspector(self) -> None:
+        """Refresh the inspector window if it's open."""
+        if self.inspector_window is not None and self.inspector_window.winfo_exists():
+            # Find the inspector view widget
+            for child in self.inspector_window.winfo_children():
+                if isinstance(child, ObjectInspectorView):
+                    child.refresh_objects()
+                    break
+    
+    def _on_object_selection_changed(self, object_ids: list) -> None:
+        """Handle object selection changes from CompositeView."""
+        # Propagate to parent (main GUI) which will update QuickInspector
+        parent = self.master
+        if hasattr(parent, '_on_composite_object_selection'):
+            parent._on_composite_object_selection(object_ids)

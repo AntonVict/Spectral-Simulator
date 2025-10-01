@@ -61,8 +61,10 @@ def generate_dataset(
 
     af = AbundanceField(rng)
     obj_list = list(objects)
+    generated_objects = []
+    
     if obj_list:
-        A = af.build_from_objects(K=len(fluors), field=field, objects=obj_list)
+        A, generated_objects = af.build_from_objects(K=len(fluors), field=field, objects=obj_list, track_objects=True)
     else:
         A = af.sample(K=len(fluors), field=field, kind='uniform')
 
@@ -85,7 +87,7 @@ def generate_dataset(
         M=M,
         spectral=spectral,
         field=field,
-        metadata={'seed': cfg.seed},
+        metadata={'seed': cfg.seed, 'objects': generated_objects},
     )
     return data
 

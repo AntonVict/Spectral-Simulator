@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 import copy
 import random
+from .object_templates import TemplateManager, ObjectTemplate
 
 
 class ObjectLayersManager:
@@ -18,6 +19,7 @@ class ObjectLayersManager:
         self.get_fluorophore_names = get_fluorophore_names_callback
         self.objects = []
         self.include_base_field = tk.BooleanVar(value=True)
+        self.template_manager = TemplateManager()
         
         # Object editor variables
         self.obj_fluor = tk.StringVar(value="F1")  # Stores fluorophore name (e.g., "F1")
@@ -35,6 +37,10 @@ class ObjectLayersManager:
         self.obj_cx = tk.DoubleVar(value=64)
         self.obj_cy = tk.DoubleVar(value=64)
         self.obj_r = tk.DoubleVar(value=40)
+        
+        # Composition mode: 'single' or 'template'
+        self.composition_mode = tk.StringVar(value="single")
+        self.composition_template = tk.StringVar(value="F1 Only")
         
         self._build_ui()
         self._add_preset_objects()
@@ -152,12 +158,11 @@ class ObjectLayersManager:
         # Initialize with full region (no parameters)
         self._update_region_ui()
 
-    def _add_object(self):
+    def _add_object(self, template_name=None):
         """Add a new object to the list."""
         # Use current image dimensions for sensible defaults
         H, W = self.get_image_dims()
         obj = {
-            'fluor_index': len(self.objects) % max(1, 3),  # Cycle through 3 fluorophores by default
             'kind': 'gaussian_blobs',
             'region': {'type': 'full'},  # Default to full/global region
             'count': 25,
@@ -166,6 +171,15 @@ class ObjectLayersManager:
             'intensity_max': 1.5,
             'spot_sigma': max(1.5, min(W, H) / 40),
         }
+        
+        # Set composition based on template or default to single fluorophore
+        if template_name:
+            obj['template_name'] = template_name
+            fluor_desc = template_name
+        else:
+            obj['fluor_index'] = len(self.objects) % max(1, 3)  # Cycle through 3 fluorophores by default
+            fluor_desc = f"F{obj['fluor_index']+1}"
+        
         self.objects.append(obj)
         self._refresh_object_list()
         
@@ -175,7 +189,7 @@ class ObjectLayersManager:
             self.obj_tree.selection_set(items[-1])
             self._on_object_select()
         
-        self.log(f"Added object {len(self.objects)}: F{obj['fluor_index']+1}, {obj['kind']}")
+        self.log(f"Added object {len(self.objects)}: {fluor_desc}, {obj['kind']}")
 
     def _remove_object(self):
         """Remove selected object from the list."""
@@ -206,9 +220,13 @@ class ObjectLayersManager:
             self.obj_tree.delete(i)
         # Populate with simplified format
         for obj in self.objects:
-            # Get fluorophore name from index
-            fluor_idx = obj.get('fluor_index', 0)
-            fluor_name = self._fluorophore_index_to_name(fluor_idx)
+            # Get fluorophore name/composition
+            if 'template_name' in obj:
+                fluor_name = f"[{obj['template_name']}]"
+            else:
+                fluor_idx = obj.get('fluor_index', 0)
+                fluor_name = self._fluorophore_index_to_name(fluor_idx)
+            
             kind = obj.get('kind', '')
             region = obj.get('region', {'type': 'full'})
             rtxt = region.get('type', 'full')
@@ -370,8 +388,24 @@ class ObjectLayersManager:
                      foreground="gray", font=('TkDefaultFont', 9, 'italic')).pack(pady=10)
                      
     def get_objects(self):
-        """Get list of object specifications."""
-        return self.objects.copy()
+        """Get list of object specifications with composition support."""
+        # Convert objects to include composition if using templates
+        converted_objects = []
+        for obj in self.objects:
+            obj_copy = obj.copy()
+            
+            # If object has a template_name, convert to composition format
+            if 'template_name' in obj_copy:
+                template = self.template_manager.get_template(obj_copy['template_name'])
+                if template:
+                    obj_copy['composition'] = template.get_composition_for_object()
+                    # Remove fluor_index since we're using composition
+                    obj_copy.pop('fluor_index', None)
+                obj_copy.pop('template_name', None)  # Remove template_name before passing to spatial
+            
+            converted_objects.append(obj_copy)
+        
+        return converted_objects
         
     def should_include_base_field(self):
         """Check if base field should be included."""
