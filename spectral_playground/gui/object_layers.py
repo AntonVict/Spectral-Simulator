@@ -389,13 +389,13 @@ class ObjectLayersManager:
             self.size_label.grid_remove()
             self.size_entry.grid_remove()
             
-            # Show sigma controls
-            self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
-            self.sigma_entry.grid(row=3, column=1, columnspan=3, sticky='w', pady=(6,0))
+            # Show sigma controls (row 5, not row 3 which has Count)
+            self.sigma_label.grid(row=5, column=0, sticky='w', pady=(6,0))
+            self.sigma_entry.grid(row=5, column=1, columnspan=3, sticky='w', pady=(6,0))
         else:
             # Circles and boxes: use size_px for radius/dimensions, no sigma
-            self.size_label.grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
-            self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
+            self.size_label.grid(row=3, column=2, sticky='w', padx=(12,4), pady=(6,0))
+            self.size_entry.grid(row=3, column=3, sticky='w', pady=(6,0))
             self.sigma_label.grid_remove()
             self.sigma_entry.grid_remove()
     
