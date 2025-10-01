@@ -21,8 +21,8 @@ A desktop application for synthesizing and exploring synthetic multispectral flu
 
 ### Spatial Object Placement
 - **Interactive Object Editor**: Visual management of fluorophore spatial distributions
-- **Multiple Object Types**: 
-  - Gaussian blobs (configurable variance)
+- **Multiple Spatial Object Types**: 
+  - Gaussians (configurable variance)
   - Filled circles and squares
   - Point sources (dots)
 - **Region-Based Placement**: Restrict objects to specific areas:
