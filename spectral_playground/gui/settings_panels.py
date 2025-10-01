@@ -36,24 +36,21 @@ class WavelengthGridPanel:
 class DetectionChannelsPanel:
     """Panel for detection channel settings."""
 
-    def __init__(self, parent_frame):
-        self.num_channels = tk.IntVar(value=4)
-        self.bandwidth = tk.DoubleVar(value=30.0)
-        self._build_ui(parent_frame)
-
-    def _build_ui(self, parent):
-        frame = ttk.Frame(parent)
-        frame.pack(fill=tk.X, padx=2, pady=2)
-        ttk.Label(frame, text='Count (L)').grid(row=0, column=0, sticky='w')
-        ttk.Label(frame, text='Bandwidth (nm)').grid(row=0, column=1, sticky='w')
-        ttk.Spinbox(frame, textvariable=self.num_channels, from_=1, to=20, width=8, increment=1).grid(row=1, column=0, padx=(0, 2))
-        ttk.Entry(frame, textvariable=self.bandwidth, width=12).grid(row=1, column=1)
+    def __init__(self, parent_frame, log_callback, get_wavelength_range_callback):
+        from .channel_manager import ChannelListManager
+        self.manager = ChannelListManager(
+            parent_frame,
+            log_callback,
+            get_wavelength_range_callback
+        )
 
     def get_channel_config(self):
-        return {
-            'count': int(self.num_channels.get()),
-            'bandwidth': float(self.bandwidth.get()),
-        }
+        """Get list of channel configurations.
+        
+        Returns:
+            List of channel configuration dictionaries
+        """
+        return self.manager.get_all_channels()
 
 
 class RandomSeedPanel:

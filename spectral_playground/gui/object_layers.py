@@ -50,7 +50,7 @@ class ObjectLayersManager:
         obj_main.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         obj_main.columnconfigure(0, weight=1)
 
-        # Object list with improved buttons
+        # Object list with improved buttons - no bold label
         list_frame = ttk.Frame(obj_main)
         list_frame.grid(row=0, column=0, sticky="nsew", pady=(0,4))
         list_frame.columnconfigure(0, weight=1)
@@ -58,14 +58,14 @@ class ObjectLayersManager:
         header_frame = ttk.Frame(list_frame)
         header_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0,4))
         header_frame.columnconfigure(0, weight=1)
-        ttk.Label(header_frame, text="Object Layers:", font=('TkDefaultFont', 9, 'bold')).pack(side=tk.LEFT)
         
+        # All buttons in a single row
         btns = ttk.Frame(header_frame)
-        btns.pack(side=tk.RIGHT)
-        ttk.Button(btns, text="Quick-Assign", width=12, command=self._quick_assign_sample).pack(side=tk.LEFT, padx=(0,4))
+        btns.pack(side=tk.LEFT)
         ttk.Button(btns, text="Add", width=6, command=self._add_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Remove", width=6, command=self._remove_object).pack(side=tk.LEFT, padx=(0,2))
-        ttk.Button(btns, text="Copy", width=6, command=self._duplicate_object).pack(side=tk.LEFT)
+        ttk.Button(btns, text="Copy", width=6, command=self._duplicate_object).pack(side=tk.LEFT, padx=(0,2))
+        ttk.Button(btns, text="Quick-Assign", width=12, command=self._quick_assign_sample).pack(side=tk.LEFT)
 
         # Simplified object list
         self.obj_tree = ttk.Treeview(list_frame, columns=("fluor","kind","region","count"), show='headings', height=4)
@@ -84,13 +84,6 @@ class ObjectLayersManager:
         
         self._build_properties_tab(editor_notebook)
         self._build_region_tab(editor_notebook)
-
-        # Apply button with better styling
-        button_frame = ttk.Frame(obj_main)
-        button_frame.grid(row=2, column=0, sticky='ew', pady=(8,0))
-        self.apply_btn = ttk.Button(button_frame, text="Apply Changes", command=self._apply_object_edits)
-        self.apply_btn.pack(side=tk.LEFT)
-        ttk.Label(button_frame, text="Select an object above to edit", foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.RIGHT)
         
     def _build_properties_tab(self, notebook):
         """Build the properties tab for object editing."""
@@ -104,39 +97,43 @@ class ObjectLayersManager:
                                        values=self._get_fluorophore_list(), 
                                        state='readonly', width=10)
         self.fluor_combo.grid(row=0, column=1, sticky='w')
+        self.fluor_combo.bind('<<ComboboxSelected>>', lambda e: self._auto_save())
         
         ttk.Label(basic_tab, text="Kind:").grid(row=0, column=2, sticky='w', padx=(12,4))
         self.kind_combo = ttk.Combobox(basic_tab, textvariable=self.obj_kind, values=["circles","boxes","gaussian_blobs","dots"], state='readonly', width=12)
         self.kind_combo.grid(row=0, column=3, sticky='w')
-        self.kind_combo.bind('<<ComboboxSelected>>', self._on_kind_change)
+        self.kind_combo.bind('<<ComboboxSelected>>', lambda e: (self._on_kind_change(), self._auto_save()))
 
         # Row 1: Count and Size
         ttk.Label(basic_tab, text="Count:").grid(row=1, column=0, sticky='w', pady=(6,0))
-        ttk.Entry(basic_tab, textvariable=self.obj_count, width=8).grid(row=1, column=1, sticky='w', pady=(6,0))
+        count_entry = ttk.Entry(basic_tab, textvariable=self.obj_count, width=8)
+        count_entry.grid(row=1, column=1, sticky='w', pady=(6,0))
+        count_entry.bind('<KeyRelease>', lambda e: self._auto_save())
         
         self.size_label = ttk.Label(basic_tab, text="Size (px):")
         self.size_label.grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
         self.size_entry = ttk.Entry(basic_tab, textvariable=self.obj_size, width=8)
         self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
+        self.size_entry.bind('<KeyRelease>', lambda e: self._auto_save())
 
         # Row 2: Intensity range
         ttk.Label(basic_tab, text="Intensity:").grid(row=2, column=0, sticky='w', pady=(6,0))
         intensity_frame = ttk.Frame(basic_tab)
         intensity_frame.grid(row=2, column=1, columnspan=3, sticky='w', pady=(6,0))
-        ttk.Entry(intensity_frame, textvariable=self.obj_i_min, width=6).pack(side=tk.LEFT)
+        i_min_entry = ttk.Entry(intensity_frame, textvariable=self.obj_i_min, width=6)
+        i_min_entry.pack(side=tk.LEFT)
+        i_min_entry.bind('<KeyRelease>', lambda e: self._auto_save())
         ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
-        ttk.Entry(intensity_frame, textvariable=self.obj_i_max, width=6).pack(side=tk.LEFT)
+        i_max_entry = ttk.Entry(intensity_frame, textvariable=self.obj_i_max, width=6)
+        i_max_entry.pack(side=tk.LEFT)
+        i_max_entry.bind('<KeyRelease>', lambda e: self._auto_save())
         
         # Row 3: Spot sigma (for Gaussian blobs and dots only)
         self.sigma_label = ttk.Label(basic_tab, text="Spot σ (px):")
         self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
         self.sigma_entry = ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=8)
         self.sigma_entry.grid(row=3, column=1, columnspan=3, sticky='w', pady=(6,0))
-        
-        # Help text for sigma
-        self.sigma_help_label = ttk.Label(basic_tab, text="Controls Gaussian spread", 
-                                         foreground="gray", font=('TkDefaultFont', 8))
-        self.sigma_help_label.grid(row=4, column=0, columnspan=4, sticky='w', pady=(2,0))
+        self.sigma_entry.bind('<KeyRelease>', lambda e: self._auto_save())
 
     def _build_region_tab(self, notebook):
         """Build the region tab for object editing."""
@@ -146,7 +143,7 @@ class ObjectLayersManager:
         ttk.Label(region_tab, text="Type:").grid(row=0, column=0, sticky='w')
         region_combo = ttk.Combobox(region_tab, textvariable=self.obj_region_type, values=["full","rect","circle"], state='readonly', width=12)
         region_combo.grid(row=0, column=1, sticky='w', padx=(0,8))
-        region_combo.bind('<<ComboboxSelected>>', self._on_region_type_change)
+        region_combo.bind('<<ComboboxSelected>>', lambda e: (self._on_region_type_change(), self._auto_save()))
 
         # Container for dynamic region parameters
         self.region_params_frame = ttk.Frame(region_tab)
@@ -262,15 +259,13 @@ class ObjectLayersManager:
         # Update kind-specific UI elements
         self._on_kind_change()
 
-    def _apply_object_edits(self):
-        """Apply edits to the selected object."""
+    def _auto_save(self):
+        """Automatically save changes to the selected object."""
         sel = self.obj_tree.selection()
         if not sel:
-            self.log("No object selected for editing")
             return
         idx = self.obj_tree.index(sel[0])
         if not (0 <= idx < len(self.objects)):
-            self.log("Invalid object selection")
             return
         
         try:
@@ -297,14 +292,13 @@ class ObjectLayersManager:
             }
             self._refresh_object_list()
             
-            # Re-select the updated item and provide feedback
+            # Re-select the updated item
             items = self.obj_tree.get_children()
             if idx < len(items):
                 self.obj_tree.selection_set(items[idx])
-            self.log(f"Updated object {idx+1}: {fluor_name}, {self.obj_kind.get()}, {region_type}")
             
-        except Exception as e:
-            self.log(f"Error updating object: {str(e)}")
+        except Exception:
+            pass  # Silently fail on invalid input during typing
 
     def _on_kind_change(self, event=None):
         """Handle object kind change to show/hide relevant parameters."""
@@ -319,19 +313,12 @@ class ObjectLayersManager:
             # Show sigma controls
             self.sigma_label.grid(row=3, column=0, sticky='w', pady=(6,0))
             self.sigma_entry.grid(row=3, column=1, columnspan=3, sticky='w', pady=(6,0))
-            self.sigma_help_label.grid(row=4, column=0, columnspan=4, sticky='w', pady=(2,0))
-            
-            if kind == "gaussian_blobs":
-                self.sigma_help_label.config(text="Controls Gaussian spread (σ = standard deviation in pixels)")
-            else:  # dots
-                self.sigma_help_label.config(text="Controls dot spread (σ = standard deviation in pixels)")
         else:
             # Circles and boxes: use size_px for radius/dimensions, no sigma
             self.size_label.grid(row=1, column=2, sticky='w', padx=(12,4), pady=(6,0))
             self.size_entry.grid(row=1, column=3, sticky='w', pady=(6,0))
             self.sigma_label.grid_remove()
             self.sigma_entry.grid_remove()
-            self.sigma_help_label.grid_remove()
             
     def _on_region_type_change(self, event=None):
         """Handle region type change."""
@@ -362,7 +349,9 @@ class ObjectLayersManager:
             
             for i, (label, var) in enumerate([("x0:", self.obj_x0), ("y0:", self.obj_y0), ("width:", self.obj_w), ("height:", self.obj_h)]):
                 ttk.Label(rect_frame, text=label).grid(row=0, column=i*2, sticky='w', padx=(0,2))
-                ttk.Entry(rect_frame, textvariable=var, width=6).grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
+                entry = ttk.Entry(rect_frame, textvariable=var, width=6)
+                entry.grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
+                entry.bind('<KeyRelease>', lambda e: self._auto_save())
                 
         elif region_type == "circle":
             # Circle parameters only
@@ -371,7 +360,9 @@ class ObjectLayersManager:
             
             for i, (label, var) in enumerate([("center_x:", self.obj_cx), ("center_y:", self.obj_cy), ("radius:", self.obj_r)]):
                 ttk.Label(circle_frame, text=label).grid(row=0, column=i*2, sticky='w', padx=(0,2))
-                ttk.Entry(circle_frame, textvariable=var, width=8).grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
+                entry = ttk.Entry(circle_frame, textvariable=var, width=8)
+                entry.grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
+                entry.bind('<KeyRelease>', lambda e: self._auto_save())
                 
         else:  # "full"
             # No parameters needed for full image

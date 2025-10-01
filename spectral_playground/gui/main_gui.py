@@ -26,7 +26,7 @@ class PlaygroundGUI(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title('Spectral Playground - Visualizer')
-        self.geometry('1400x900')
+        self.geometry('1600x950')  # Increased size for better visibility
 
         self.state = PlaygroundState()
         self.save_root = self._setup_save_directory()
@@ -65,6 +65,13 @@ class PlaygroundGUI(tk.Tk):
 
     def generate_data(self) -> None:
         try:
+            # Validate channels before generating
+            is_valid, error_msg = self.sidebar.panels['channels'].manager.validate_all()
+            if not is_valid:
+                messagebox.showwarning('Invalid Channel Configuration', error_msg)
+                self._log(f'Channel validation failed: {error_msg}')
+                return
+            
             cfg = self.sidebar.get_generation_config()
             fluorophores = self.sidebar.get_fluorophores()
             if not fluorophores:

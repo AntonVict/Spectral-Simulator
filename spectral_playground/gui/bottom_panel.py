@@ -27,20 +27,36 @@ class BottomPanel(ttk.Frame):
         self.columnconfigure(1, weight=1)
         self.columnconfigure(2, weight=1)
 
-        spectral_frame = ttk.LabelFrame(self, text='Spectral Profiles')
+        spectral_frame = ttk.LabelFrame(self, text='Spectral Profiles') 
         spectral_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 4))
 
         spectral_controls = ttk.Frame(spectral_frame)
         spectral_controls.pack(fill=tk.X, padx=4, pady=2)
 
         ttk.Label(spectral_controls, text='Show:').pack(side=tk.LEFT)
-        self._fluor_checks_container = ttk.Frame(spectral_controls)
-        self._fluor_checks_container.pack(side=tk.LEFT, padx=(4, 0))
+        
+        # Expand button on the right (pack first to ensure visibility)
         self._spectral_expand_btn = ttk.Button(spectral_controls, text='Expand', command=lambda: None)
-        self._spectral_expand_btn.pack(side=tk.RIGHT)
+        self._spectral_expand_btn.pack(side=tk.RIGHT, padx=(4, 0))
+        
+        # Create scrollable container for fluorophore checkboxes
+        self._fluor_scroll_container = tk.Frame(spectral_controls, height=25)
+        self._fluor_scroll_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(4, 4))
+        
+        self._fluor_canvas = tk.Canvas(self._fluor_scroll_container, height=25, highlightthickness=0)
+        self._fluor_scrollbar = ttk.Scrollbar(self._fluor_scroll_container, orient='horizontal', command=self._fluor_canvas.xview)
+        self._fluor_checks_container = ttk.Frame(self._fluor_canvas)
+        
+        self._fluor_canvas.configure(xscrollcommand=self._fluor_scrollbar.set)
+        self._fluor_canvas.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self._fluor_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        self._canvas_window = self._fluor_canvas.create_window((0, 0), window=self._fluor_checks_container, anchor='nw')
+        self._fluor_checks_container.bind('<Configure>', self._on_fluor_container_configure)
 
         self.spectral_panel = SpectralPanel(spectral_frame)
         self.fluor_vars: List[tk.BooleanVar] = []
+        self.measured_total_var = tk.BooleanVar(value=True)
 
         abundance_frame = ttk.LabelFrame(self, text='Abundance')
         abundance_frame.grid(row=0, column=1, sticky='nsew', padx=4)
@@ -63,6 +79,18 @@ class BottomPanel(ttk.Frame):
         if not names:
             self.state.selections.update_fluors(tuple())
             return
+
+        # Add "Measured Total" checkbox first
+        measured_chk = ttk.Checkbutton(
+            self._fluor_checks_container,
+            text='Measured Total',
+            variable=self.measured_total_var,
+            command=self._measured_total_changed,
+        )
+        measured_chk.pack(side=tk.LEFT, padx=2)
+        
+        # Add separator
+        ttk.Separator(self._fluor_checks_container, orient='vertical').pack(side=tk.LEFT, padx=4, fill=tk.Y, pady=2)
 
         for idx, name in enumerate(names):
             var = tk.BooleanVar(value=True)
@@ -96,3 +124,11 @@ class BottomPanel(ttk.Frame):
         flags = tuple(var.get() for var in self.fluor_vars)
         self.state.selections.update_fluors(flags)
         self.on_fluor_selection_changed()
+    
+    def _measured_total_changed(self) -> None:
+        self.state.selections.set_measured_total(self.measured_total_var.get())
+        self.on_fluor_selection_changed()
+    
+    def _on_fluor_container_configure(self, event) -> None:
+        # Update scrollable region when container size changes
+        self._fluor_canvas.configure(scrollregion=self._fluor_canvas.bbox('all'))

@@ -140,21 +140,23 @@ class SpectralPanel:
             ax.plot(lambdas, 0.2 + 0.6 * pdf_norm, color=color, linewidth=linewidth, 
                    linestyle=linestyle, label=f'{fluor.name}')
 
-        total_per_channel = np.sum(data.Y, axis=1)
-        channel_centers = np.array([ch.center_nm for ch in spectral.channels])
-        if len(channel_centers) >= 2:
-            interp = np.interp(
-                lambdas,
-                channel_centers,
-                total_per_channel,
-                left=total_per_channel[0],
-                right=total_per_channel[-1],
-            )
-        else:
-            interp = np.full_like(lambdas, total_per_channel[0] if len(total_per_channel) else 0.0)
+        # Only plot measured total if enabled in state
+        if state.selections.show_measured_total:
+            total_per_channel = np.sum(data.Y, axis=1)
+            channel_centers = np.array([ch.center_nm for ch in spectral.channels])
+            if len(channel_centers) >= 2:
+                interp = np.interp(
+                    lambdas,
+                    channel_centers,
+                    total_per_channel,
+                    left=total_per_channel[0],
+                    right=total_per_channel[-1],
+                )
+            else:
+                interp = np.full_like(lambdas, total_per_channel[0] if len(total_per_channel) else 0.0)
 
-        curve = 0.2 + 0.6 * (interp / np.max(interp)) if np.max(interp) > 0 else np.zeros_like(interp) + 0.2
-        ax.plot(lambdas, curve, color='black', linewidth=2, label='Measured total')
+            curve = 0.2 + 0.6 * (interp / np.max(interp)) if np.max(interp) > 0 else np.zeros_like(interp) + 0.2
+            ax.plot(lambdas, curve, color='black', linewidth=2, label='Measured total')
 
         # Improved legend handling for many fluorophores
         handles, labels = ax.get_legend_handles_labels()

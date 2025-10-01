@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, Iterable, Optional
+from typing import Dict, Any, Iterable, Optional, List
 
 import os
 import numpy as np
@@ -20,7 +20,7 @@ from .state import PlaygroundData
 class GenerationConfig:
     seed: int
     grid: Dict[str, float]
-    channels: Dict[str, float]
+    channels: List[Dict[str, Any]]  # Changed from Dict to List
     dimensions: Dict[str, float]
 
 
@@ -40,16 +40,14 @@ def generate_dataset(
         dtype=np.float32,
     )
 
-    L = int(cfg.channels['count'])
-    bandwidth = float(cfg.channels['bandwidth'])
-    channel_centers = np.linspace(
-        cfg.grid['start'] + 0.5 * bandwidth,
-        cfg.grid['stop'] - 0.5 * bandwidth,
-        L,
-    )
+    # Create channels directly from configuration
     channels = [
-        Channel(name=f"C{idx + 1}", center_nm=float(center), bandwidth_nm=bandwidth)
-        for idx, center in enumerate(channel_centers)
+        Channel(
+            name=ch_cfg['name'],
+            center_nm=float(ch_cfg['center_nm']),
+            bandwidth_nm=float(ch_cfg['bandwidth_nm'])
+        )
+        for ch_cfg in cfg.channels
     ]
 
     fluors = list(fluorophores)

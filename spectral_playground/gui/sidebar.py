@@ -72,7 +72,11 @@ class Sidebar(ttk.Frame):
         channel_group = ttk.LabelFrame(self._settings_frame, text='Detection Channels')
         channel_group.grid(row=row, column=0, sticky='ew', padx=2, pady=2)
         channel_group.columnconfigure(0, weight=1)
-        self.panels['channels'] = DetectionChannelsPanel(channel_group)
+        self.panels['channels'] = DetectionChannelsPanel(
+            channel_group, 
+            log_callback,
+            self._get_wavelength_range
+        )
         row += 1
 
         fluor_group = ttk.LabelFrame(self._settings_frame, text='Fluorophores')
@@ -104,6 +108,11 @@ class Sidebar(ttk.Frame):
         dims = self.panels['dimensions'].get_dimensions()
         return dims['H'], dims['W']
     
+    def _get_wavelength_range(self):
+        """Get current wavelength range for channel validation."""
+        grid = self.panels['grid'].get_wavelength_grid()
+        return (grid['start'], grid['stop'])
+    
     def _get_fluorophore_names(self):
         """Get list of fluorophore names for the object layers dropdown."""
         try:
@@ -133,10 +142,20 @@ class Sidebar(ttk.Frame):
                 self.panels['grid'].grid_start.set(float(lambdas[0]))
                 self.panels['grid'].grid_stop.set(float(lambdas[-1]))
                 self.panels['grid'].grid_step.set(step)
+            
+            # Update channels with loaded data
             channels = spectral_system.channels
             if channels:
-                self.panels['channels'].num_channels.set(len(channels))
-                self.panels['channels'].bandwidth.set(float(channels[0].bandwidth_nm))
+                channel_configs = [
+                    {
+                        'name': ch.name,
+                        'center_nm': ch.center_nm,
+                        'bandwidth_nm': ch.bandwidth_nm
+                    }
+                    for ch in channels
+                ]
+                self.panels['channels'].manager.set_channels(channel_configs)
+            
             H, W = field_spec.shape
             dims_panel = self.panels['dimensions']
             dims_panel.H.set(int(H))

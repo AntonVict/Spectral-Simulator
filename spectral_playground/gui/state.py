@@ -47,12 +47,16 @@ class SelectionState:
 
     active_channels: Tuple[bool, ...] = tuple()
     active_fluors: Tuple[bool, ...] = tuple()
+    show_measured_total: bool = True
 
     def update_channels(self, flags: Tuple[bool, ...]) -> None:
         self.active_channels = flags
 
     def update_fluors(self, flags: Tuple[bool, ...]) -> None:
         self.active_fluors = flags
+    
+    def set_measured_total(self, visible: bool) -> None:
+        self.show_measured_total = visible
 
 
 @dataclass
