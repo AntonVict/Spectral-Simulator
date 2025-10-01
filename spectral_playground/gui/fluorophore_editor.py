@@ -34,6 +34,17 @@ class FluorophoreEditor(ttk.Frame):
         
     def _build_ui(self):
         """Build the fluorophore editor UI."""
+        # Name field
+        name_frame = ttk.Frame(self)
+        name_frame.pack(fill=tk.X, pady=2)
+        ttk.Label(name_frame, text="Name:").grid(row=0, column=0, sticky="w", padx=(0,4))
+        self.name_var = tk.StringVar(value=self.data['name'])
+        name_entry = ttk.Entry(name_frame, textvariable=self.name_var, width=15)
+        name_entry.grid(row=0, column=1, padx=2)
+        # Save on Enter key or when focus leaves the field (not on every keystroke)
+        name_entry.bind('<Return>', self._on_name_change)
+        name_entry.bind('<FocusOut>', self._on_name_change)
+        
         # Model selection
         model_frame = ttk.Frame(self)
         model_frame.pack(fill=tk.X, pady=2)
@@ -70,6 +81,10 @@ class FluorophoreEditor(ttk.Frame):
         self.data['model'] = self.model_var.get()
         self._build_params()
         self._auto_save()
+    
+    def _on_name_change(self, event=None):
+        """Handle name change."""
+        self._auto_save()
         
     def _on_param_change(self, event=None):
         """Handle parameter value change."""
@@ -77,17 +92,28 @@ class FluorophoreEditor(ttk.Frame):
     
     def _auto_save(self):
         """Automatically save changes to internal data."""
+        self.data['name'] = self.name_var.get()
         self.data['model'] = self.model_var.get()
         try:
             self.data['brightness'] = self.brightness_var.get()
         except:
             pass
-        self.data['params'] = {}
-        for k, v in self.param_vars.items():
-            try:
-                self.data['params'][k] = v.get()
-            except:
-                pass
+        
+        # For empirical models, preserve existing params (CSV data)
+        # For other models, rebuild from param_vars
+        if self.model_var.get() == 'empirical':
+            # Don't touch params - they contain the CSV data (csv_wavelengths, csv_intensities)
+            # This prevents clearing the imported data when changing the name
+            pass
+        else:
+            # Rebuild params from UI fields
+            self.data['params'] = {}
+            for k, v in self.param_vars.items():
+                try:
+                    self.data['params'][k] = v.get()
+                except:
+                    pass
+        
         if self.on_update:
             self.on_update(self.fluor_idx, self.data)
             

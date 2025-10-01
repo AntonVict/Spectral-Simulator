@@ -3,7 +3,7 @@ Spectral Simulator
 
 A desktop application for synthesizing and exploring synthetic multispectral fluorescence datasets. It is intended for prototyping spectral imaging configurations and visual analysis.
 
-![Spectral Simulator Interface](docs/images/Screenshot2.png)
+![Spectral Simulator Interface](docs/images/Screenshot.png)
 
 *Interactive GUI showing spectral profile design, spatial object placement, and real-time composite visualization*
 
