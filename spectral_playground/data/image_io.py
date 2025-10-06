@@ -100,7 +100,8 @@ class SpectralImageIO:
                     } for fl in spectral_system.fluors
                 ],
                 'format_version': '1.0',
-                'description': 'Spectral visualization playground dataset'
+                'description': 'Spectral visualization playground dataset',
+                'user_metadata': dataset.meta  # Preserve user metadata (objects, etc.)
             }
             save_data['metadata'] = metadata
         
@@ -130,15 +131,22 @@ class SpectralImageIO:
         # Extract optional data
         S = data.get('S', None)
         
-        # Create dataset
+        # Extract user metadata if available (will be populated from 'metadata' dict below if it exists)
+        user_meta = {}
+        
+        # Create dataset (meta will be updated below if metadata exists)
         dataset = SynthDataset(
             Y=Y, A=A, B=B, M=M, S=S,
-            meta={}
+            meta=user_meta
         )
         
         # Reconstruct spectral system and field if metadata exists
         if 'metadata' in data:
             metadata = data['metadata'].item()  # Convert numpy scalar to dict
+            
+            # Restore user metadata (objects, seed, etc.)
+            if 'user_metadata' in metadata:
+                dataset.meta = dict(metadata['user_metadata'])
             
             # Reconstruct wavelengths
             lambdas = metadata['wavelengths']

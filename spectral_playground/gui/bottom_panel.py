@@ -27,15 +27,13 @@ class BottomPanel(ttk.Frame):
         self.state = state
         self.on_fluor_selection_changed = on_fluor_selection_changed
 
-        # 4-column layout: Spectral | Abundance | Quick Inspector | Output
-        self.columnconfigure(0, weight=1)
-        self.columnconfigure(1, weight=1)
-        self.columnconfigure(2, weight=1)
-        self.columnconfigure(3, weight=1)
+        # Create resizable PanedWindow for 4 panels with draggable dividers
+        self.paned_window = ttk.PanedWindow(self, orient=tk.HORIZONTAL)
+        self.paned_window.pack(fill=tk.BOTH, expand=True)
 
-        # Column 1: Spectral Profiles
-        spectral_frame = ttk.LabelFrame(self, text='Spectral Profiles')
-        spectral_frame.grid(row=0, column=0, sticky='nsew', padx=(0, 4))
+        # Column 1: Spectral Profiles (weight=2 for wider default)
+        spectral_frame = ttk.LabelFrame(self.paned_window, text='Spectral Profiles')
+        self.paned_window.add(spectral_frame, weight=2)
 
         spectral_controls = ttk.Frame(spectral_frame)
         spectral_controls.pack(fill=tk.X, padx=4, pady=2)
@@ -65,15 +63,15 @@ class BottomPanel(ttk.Frame):
         self.fluor_vars: List[tk.BooleanVar] = []
         self.measured_total_var = tk.BooleanVar(value=True)
 
-        # Column 2: Abundance
-        abundance_frame = ttk.LabelFrame(self, text='Abundance')
-        abundance_frame.grid(row=0, column=1, sticky='nsew', padx=4)
+        # Column 2: Abundance (weight=2 for wider default)
+        abundance_frame = ttk.LabelFrame(self.paned_window, text='Abundance')
+        self.paned_window.add(abundance_frame, weight=2)
         self.abundance_panel = AbundancePanel(abundance_frame)
         self.abundance_panel.pack(fill=tk.BOTH, expand=True)
 
-        # Column 3: Quick Inspector
-        quick_inspector_frame = ttk.LabelFrame(self, text='Quick Inspector')
-        quick_inspector_frame.grid(row=0, column=2, sticky='nsew', padx=4)
+        # Column 3: Quick Inspector (weight=2 for wider default)
+        quick_inspector_frame = ttk.LabelFrame(self.paned_window, text='Quick Inspector')
+        self.paned_window.add(quick_inspector_frame, weight=2)
         self.quick_inspector = QuickInspectorPanel(
             quick_inspector_frame,
             get_data_callback=get_data_callback,
@@ -82,9 +80,12 @@ class BottomPanel(ttk.Frame):
         )
         self.quick_inspector.pack(fill=tk.BOTH, expand=True)
 
-        # Column 4: Logs/Output
-        self.output_panel = OutputPanel(self)
-        self.output_panel.grid(row=0, column=3, sticky='nsew', padx=(4, 0))
+        # Column 4: Logs/Output (weight=1 for narrower default, can be resized)
+        # Wrap OutputPanel in a frame for consistent border with other panels
+        output_frame = ttk.Frame(self.paned_window)
+        self.paned_window.add(output_frame, weight=1)
+        self.output_panel = OutputPanel(output_frame)
+        self.output_panel.pack(fill=tk.BOTH, expand=True)
 
     def configure_expanders(self, spectral_cb: Callable[[], None], abundance_cb: Callable[[], None]) -> None:
         self._spectral_expand_btn.config(command=spectral_cb)

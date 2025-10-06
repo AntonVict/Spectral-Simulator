@@ -158,3 +158,4 @@ class TemplateManager:
             self.remove_template(template.name)
             self.add_template(template)
 
+

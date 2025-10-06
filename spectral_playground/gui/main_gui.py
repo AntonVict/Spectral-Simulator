@@ -34,8 +34,8 @@ class PlaygroundGUI(tk.Tk):
 
         self.columnconfigure(0, weight=0)
         self.columnconfigure(1, weight=1)
-        self.rowconfigure(0, weight=1)
-        self.rowconfigure(1, weight=0)
+        self.rowconfigure(0, weight=3)  # Top area (composite view) gets 75% priority
+        self.rowconfigure(1, weight=1)  # Bottom area (analysis panels) gets 25% priority, now resizable!
 
         self.sidebar = Sidebar(self, self._log)
         self.sidebar.grid(row=0, column=0, sticky='nsw', padx=4, pady=4)
