@@ -39,7 +39,7 @@ class Sidebar(ttk.Frame):
         scroll_frame.grid_columnconfigure(0, weight=1)
         scroll_frame.grid_rowconfigure(0, weight=1)
 
-        canvas = tk.Canvas(scroll_frame, width=330)
+        canvas = tk.Canvas(scroll_frame, width=350)
         scrollbar = ttk.Scrollbar(scroll_frame, orient='vertical', command=canvas.yview)
         canvas.grid(row=0, column=0, sticky='nsew')
         scrollbar.grid(row=0, column=1, sticky='ns')

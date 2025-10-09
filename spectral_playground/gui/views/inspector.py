@@ -463,7 +463,7 @@ class ObjectInspectorView(ttk.Frame):
         self._show_object_details()
     
     def set_selected_objects(self, object_ids: List[int]):
-        """Programmatically select objects by their IDs.
+        """Programmatically select objects by their IDs (optimized).
         
         Args:
             object_ids: List of object IDs to select
@@ -476,13 +476,18 @@ class ObjectInspectorView(ttk.Frame):
             # Clear current selection
             self.tree.selection_remove(self.tree.selection())
             
-            # Find all tree items matching the object IDs
+            # Build ID→item mapping ONCE (O(n) instead of O(n²))
+            # This is critical for performance with large selections
+            id_to_item = {}
+            for item in self.tree.get_children():
+                obj_id = self.tree.item(item)['values'][0]
+                id_to_item[obj_id] = item
+            
+            # Find items using hash lookup (O(1) per ID)
             items_to_select = []
             for obj_id in object_ids:
-                for item in self.tree.get_children():
-                    if self.tree.item(item)['values'][0] == obj_id:
-                        items_to_select.append(item)
-                        break  # Found this ID, move to next
+                if obj_id in id_to_item:
+                    items_to_select.append(id_to_item[obj_id])
             
             # Select all items at once (more efficient than adding one by one)
             if items_to_select:
@@ -562,22 +567,30 @@ class ObjectInspectorView(ttk.Frame):
         center_y, center_x = pos
         crop_size = 30  # Larger view for full inspector
         
+        # Create zoom frame first so it's available in exception handler
+        zoom_frame = ttk.LabelFrame(self.details_content, text="Zoomed View")
+        zoom_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
+        
         try:
-            # Generate zoomed composite
-            from ..views.composite.composite_view import create_composite_rgb
+            # Generate zoomed composite using RGBRenderer
+            from ..views.composite.rendering.rgb_renderer import RGBRenderer
+            from ..views.composite.visual_settings import VisualSettingsManager
             
             Y = data.Y
             M = data.M
             H, W = data.field.shape
             
-            # Create full composite
-            full_rgb = create_composite_rgb(Y, M, H, W, 
-                                           channel_selection=None,
-                                           colormap='turbo',
-                                           normalize_mode='global',
-                                           gamma=1.0,
-                                           brightness=1.0,
-                                           contrast=1.0)
+            # Create visual settings manager with default settings
+            visual_settings = VisualSettingsManager(self.details_content)
+            visual_settings.normalization_mode.set("global")
+            visual_settings.gamma_correction.set(1.0)
+            visual_settings.use_log_scaling.set(False)
+            visual_settings.percentile_threshold.set(99.0)
+            
+            # Create RGB renderer and generate composite
+            renderer = RGBRenderer(visual_settings)
+            channels = [True] * Y.shape[0]  # Use all channels
+            full_rgb = renderer.render_composite(data, channels)
             
             # Crop region
             y0 = int(max(0, center_y - crop_size))
@@ -588,9 +601,6 @@ class ObjectInspectorView(ttk.Frame):
             cropped = full_rgb[y0:y1, x0:x1]
             
             # Create figure for zoomed view
-            zoom_frame = ttk.LabelFrame(self.details_content, text="Zoomed View")
-            zoom_frame.pack(fill=tk.BOTH, expand=True, padx=4, pady=4)
-            
             from matplotlib.figure import Figure
             from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
             
@@ -608,7 +618,34 @@ class ObjectInspectorView(ttk.Frame):
             ax.plot([rel_x], [rel_y], 'o', markerfacecolor='none', markeredgecolor='cyan',
                    markersize=10, markeredgewidth=2)
             
-            ax.set_title(f"Local View ({2*crop_size}×{2*crop_size} px)", fontsize=10)
+            # Draw bounding box based on object type/size
+            obj_type = obj.get('type', 'unknown')
+            size_px = obj.get('size_px', 3.0)
+            spot_sigma = obj.get('spot_sigma', 2.0)
+            
+            # Determine box size based on object type
+            if obj_type == 'circles' or obj_type == 'boxes':
+                box_radius = size_px
+            elif obj_type in ('gaussian_blobs', 'dots'):
+                box_radius = 2.0 * spot_sigma  # 95% containment
+            else:
+                box_radius = 3.0  # Default
+            
+            # Draw rectangle around object
+            from matplotlib.patches import Rectangle
+            box_x = rel_x - box_radius
+            box_y = rel_y - box_radius
+            box_width = 2 * box_radius
+            box_height = 2 * box_radius
+            
+            rect = Rectangle(
+                (box_x, box_y), box_width, box_height,
+                linewidth=1.5, edgecolor='lime', facecolor='none',
+                linestyle='--', alpha=0.8
+            )
+            ax.add_patch(rect)
+            
+            ax.set_title(f"Local View ({2*crop_size}×{2*crop_size} px) | Type: {obj_type}", fontsize=10)
             fig.tight_layout()
             
             canvas = FigureCanvasTkAgg(fig, zoom_frame)

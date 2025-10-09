@@ -61,12 +61,33 @@ def generate_dataset(
 
     af = AbundanceField(rng)
     obj_list = list(objects)
-    generated_objects = []
+    geometric_scene = None
     
     if obj_list:
-        A, generated_objects = af.build_from_objects(K=len(fluors), field=field, objects=obj_list, track_objects=True)
+        A, geometric_scene = af.build_from_objects(
+            K=len(fluors), 
+            field=field, 
+            objects=obj_list, 
+            track_objects=True,
+            use_ppp=False  # Can be configured later via GUI
+        )
+        # Extract legacy object metadata from geometric scene for backward compatibility
+        generated_objects = []
+        if geometric_scene and len(geometric_scene.objects) > 0:
+            for geo_obj in geometric_scene.objects:
+                generated_objects.append({
+                    'id': geo_obj.id,
+                    'position': geo_obj.position,
+                    'type': geo_obj.type,
+                    'radius': geo_obj.radius,
+                    'spot_sigma': geo_obj.spot_sigma,
+                    'base_intensity': geo_obj.base_intensity,
+                    'size_px': geo_obj.size_px,
+                    'composition': geo_obj.composition
+                })
     else:
         A = af.sample(K=len(fluors), field=field, kind='uniform')
+        generated_objects = []
 
     bg = BackgroundModel(rng)
     forward = ForwardModel(
@@ -87,6 +108,7 @@ def generate_dataset(
         M=M,
         spectral=spectral,
         field=field,
+        geometric_scene=geometric_scene,
         metadata={'seed': cfg.seed, 'objects': generated_objects},
     )
     return data

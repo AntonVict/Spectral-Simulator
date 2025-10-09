@@ -114,7 +114,7 @@ class ViewerPanel(ttk.Frame):
     def _on_composite_visual_settings_changed(self) -> None:
         """Called when composite visual settings change - trigger redraw."""
         # Clear RGB cache to force re-render with new visual settings
-        self.composite_view._rgb_cache_dict.clear()
+        self.composite_view.cache.clear()
         self.on_channels_changed()  # This will trigger update_visualisation in main_gui
     
     def _open_inspector(self, object_ids: list = None) -> None:

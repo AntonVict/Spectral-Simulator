@@ -38,6 +38,10 @@ class ObjectLayersManager:
         self.obj_cy = tk.DoubleVar(value=64)
         self.obj_r = tk.DoubleVar(value=40)
         
+        # Statistical analysis parameters
+        self.obj_lambda = tk.DoubleVar(value=0.0)  # Spatial intensity (objects/px²)
+        self.count_lambda_sync_lock = False  # Prevent update loops
+        
         # Composition mode: 'single' or 'template'
         self.composition_mode = tk.StringVar(value="single")
         self.composition_template = tk.StringVar(value="F1 Only")
@@ -141,22 +145,51 @@ class ObjectLayersManager:
         self.kind_combo.grid(row=2, column=1, columnspan=3, sticky='w')
         self.kind_combo.bind('<<ComboboxSelected>>', lambda e: (self._on_kind_change(), self._auto_save()))
 
-        # Row 3: Count and Size
-        ttk.Label(basic_tab, text="Count:").grid(row=3, column=0, sticky='w', pady=(6,0))
-        count_entry = ttk.Entry(basic_tab, textvariable=self.obj_count, width=10)
-        count_entry.grid(row=3, column=1, sticky='w', pady=(6,0))
-        count_entry.bind('<KeyRelease>', lambda e: self._auto_save())
+        # Row 3: Count and Lambda (synchronized)
+        count_lambda_frame = ttk.LabelFrame(basic_tab, text="Object Density")
+        count_lambda_frame.grid(row=3, column=0, columnspan=4, sticky='ew', pady=(6,0))
         
+        # Left column: Count
+        count_col = ttk.Frame(count_lambda_frame)
+        count_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
+        
+        ttk.Label(count_col, text="Count:").pack(anchor='w')
+        count_entry = ttk.Entry(count_col, textvariable=self.obj_count, width=10)
+        count_entry.pack(anchor='w')
+        count_entry.bind('<KeyRelease>', lambda e: self._on_count_changed())
+        
+        self.count_display_label = ttk.Label(count_col, text="→ λ = 0.000000 obj/px²", 
+                                              font=('TkDefaultFont', 7), foreground='gray')
+        self.count_display_label.pack(anchor='w', pady=(2,0))
+        
+        # Right column: Lambda
+        lambda_col = ttk.Frame(count_lambda_frame)
+        lambda_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
+        
+        ttk.Label(lambda_col, text="Spatial intensity (λ):").pack(anchor='w')
+        lambda_entry = ttk.Entry(lambda_col, textvariable=self.obj_lambda, width=10)
+        lambda_entry.pack(anchor='w')
+        lambda_entry.bind('<KeyRelease>', lambda e: self._on_lambda_changed())
+        
+        self.lambda_display_label = ttk.Label(lambda_col, text="→ n ≈ 0 objects", 
+                                               font=('TkDefaultFont', 7), foreground='gray')
+        self.lambda_display_label.pack(anchor='w', pady=(2,0))
+        
+        # Info label
+        ttk.Label(count_lambda_frame, text="ℹ️ Count and spatial intensity are linked: λ = n / area", 
+                  font=('TkDefaultFont', 7, 'italic'), foreground='#666').pack(pady=(0,4))
+        
+        # Row 4: Size
         self.size_label = ttk.Label(basic_tab, text="Size (px):")
-        self.size_label.grid(row=3, column=2, sticky='w', padx=(12,4), pady=(6,0))
+        self.size_label.grid(row=4, column=0, sticky='w', padx=(0,4), pady=(6,0))
         self.size_entry = ttk.Entry(basic_tab, textvariable=self.obj_size, width=10)
-        self.size_entry.grid(row=3, column=3, sticky='w', pady=(6,0))
+        self.size_entry.grid(row=4, column=1, sticky='w', pady=(6,0))
         self.size_entry.bind('<KeyRelease>', lambda e: self._auto_save())
 
-        # Row 4: Intensity range
-        ttk.Label(basic_tab, text="Intensity:").grid(row=4, column=0, sticky='w', pady=(6,0))
+        # Row 5: Intensity range
+        ttk.Label(basic_tab, text="Spectral intensity (brightness):").grid(row=5, column=0, sticky='w', pady=(6,0))
         intensity_frame = ttk.Frame(basic_tab)
-        intensity_frame.grid(row=4, column=1, columnspan=3, sticky='w', pady=(6,0))
+        intensity_frame.grid(row=5, column=1, columnspan=3, sticky='w', pady=(6,0))
         i_min_entry = ttk.Entry(intensity_frame, textvariable=self.obj_i_min, width=6)
         i_min_entry.pack(side=tk.LEFT)
         i_min_entry.bind('<KeyRelease>', lambda e: self._auto_save())
@@ -165,12 +198,20 @@ class ObjectLayersManager:
         i_max_entry.pack(side=tk.LEFT)
         i_max_entry.bind('<KeyRelease>', lambda e: self._auto_save())
         
-        # Row 5: Spot sigma (for Gaussian blobs and dots only)
+        # Row 6: Spot sigma (for Gaussian blobs and dots only)
         self.sigma_label = ttk.Label(basic_tab, text="Spot σ (px):")
-        self.sigma_label.grid(row=5, column=0, sticky='w', pady=(6,0))
+        self.sigma_label.grid(row=6, column=0, sticky='w', pady=(6,0))
         self.sigma_entry = ttk.Entry(basic_tab, textvariable=self.obj_sigma, width=10)
-        self.sigma_entry.grid(row=5, column=1, columnspan=3, sticky='w', pady=(6,0))
+        self.sigma_entry.grid(row=6, column=1, columnspan=3, sticky='w', pady=(6,0))
         self.sigma_entry.bind('<KeyRelease>', lambda e: self._auto_save())
+        
+        # Row 7: Info text about radius derivation
+        ttk.Label(
+            basic_tab,
+            text="ℹ️ Radius derived from object type: circles/boxes=size_px, gaussian=2×σ",
+            font=('TkDefaultFont', 7, 'italic'),
+            foreground='gray'
+        ).grid(row=7, column=0, columnspan=4, sticky='w', pady=(8,0))
         
         # Initialize mode UI
         self._on_composition_mode_change()
@@ -301,6 +342,16 @@ class ObjectLayersManager:
         # Update other properties
         self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
         self.obj_count.set(int(obj.get('count', 50)))
+        
+        # Initialize lambda from count
+        H, W = self.get_image_dims()
+        area = H * W
+        if area > 0:
+            lambda_val = self.obj_count.get() / area
+            self.obj_lambda.set(lambda_val)
+            self.count_display_label.config(text=f"→ λ = {lambda_val:.6f} obj/px²")
+            self.lambda_display_label.config(text=f"→ n ≈ {self.obj_count.get()} objects")
+        
         self.obj_size.set(float(obj.get('size_px', 6.0)))
         self.obj_i_min.set(float(obj.get('intensity_min', 0.5)))
         self.obj_i_max.set(float(obj.get('intensity_max', 1.5)))
@@ -322,6 +373,46 @@ class ObjectLayersManager:
         # Update kind-specific UI elements
         self._on_kind_change()
 
+    def _on_count_changed(self):
+        """Handle count field change - update lambda."""
+        if self.count_lambda_sync_lock:
+            return
+        self.count_lambda_sync_lock = True
+        
+        try:
+            H, W = self.get_image_dims()
+            area = H * W
+            count = self.obj_count.get()
+            lambda_val = count / area if area > 0 else 0.0
+            
+            self.obj_lambda.set(lambda_val)
+            self.count_display_label.config(text=f"→ λ = {lambda_val:.6f} obj/px²")
+        except:
+            pass
+        finally:
+            self.count_lambda_sync_lock = False
+            self._auto_save()
+    
+    def _on_lambda_changed(self):
+        """Handle lambda field change - update count."""
+        if self.count_lambda_sync_lock:
+            return
+        self.count_lambda_sync_lock = True
+        
+        try:
+            H, W = self.get_image_dims()
+            area = H * W
+            lambda_val = self.obj_lambda.get()
+            count = int(round(lambda_val * area))
+            
+            self.obj_count.set(count)
+            self.lambda_display_label.config(text=f"→ n ≈ {count} objects")
+        except:
+            pass
+        finally:
+            self.count_lambda_sync_lock = False
+            self._auto_save()
+    
     def _auto_save(self):
         """Automatically save changes to the selected object."""
         sel = self.obj_tree.selection()
@@ -344,7 +435,7 @@ class ObjectLayersManager:
             # Handle composition mode
             if self.composition_mode.get() == "template":
                 template_name = self.composition_template.get()
-                self.objects[idx] = {
+                obj_spec = {
                     'template_name': template_name,
                     'kind': self.obj_kind.get(),
                     'region': region,
@@ -354,12 +445,13 @@ class ObjectLayersManager:
                     'intensity_max': float(self.obj_i_max.get()),
                     'spot_sigma': float(self.obj_sigma.get()),
                 }
+                self.objects[idx] = obj_spec
             else:
                 # Single fluorophore mode
                 fluor_name = self.obj_fluor.get()
                 fluor_index = self._fluorophore_name_to_index(fluor_name)
                 
-                self.objects[idx] = {
+                obj_spec = {
                     'fluor_index': fluor_index,
                     'kind': self.obj_kind.get(),
                     'region': region,
@@ -369,6 +461,7 @@ class ObjectLayersManager:
                     'intensity_max': float(self.obj_i_max.get()),
                     'spot_sigma': float(self.obj_sigma.get()),
                 }
+                self.objects[idx] = obj_spec
             self._refresh_object_list()
             
             # Re-select the updated item
@@ -378,7 +471,7 @@ class ObjectLayersManager:
             
         except Exception:
             pass  # Silently fail on invalid input during typing
-
+    
     def _on_kind_change(self, event=None):
         """Handle object kind change to show/hide relevant parameters."""
         kind = self.obj_kind.get()
@@ -389,13 +482,13 @@ class ObjectLayersManager:
             self.size_label.grid_remove()
             self.size_entry.grid_remove()
             
-            # Show sigma controls (row 5, not row 3 which has Count)
-            self.sigma_label.grid(row=5, column=0, sticky='w', pady=(6,0))
-            self.sigma_entry.grid(row=5, column=1, columnspan=3, sticky='w', pady=(6,0))
+            # Show sigma controls
+            self.sigma_label.grid(row=6, column=0, sticky='w', pady=(6,0))
+            self.sigma_entry.grid(row=6, column=1, columnspan=3, sticky='w', pady=(6,0))
         else:
             # Circles and boxes: use size_px for radius/dimensions, no sigma
-            self.size_label.grid(row=3, column=2, sticky='w', padx=(12,4), pady=(6,0))
-            self.size_entry.grid(row=3, column=3, sticky='w', pady=(6,0))
+            self.size_label.grid(row=4, column=0, sticky='w', padx=(0,4), pady=(6,0))
+            self.size_entry.grid(row=4, column=1, sticky='w', pady=(6,0))
             self.sigma_label.grid_remove()
             self.sigma_entry.grid_remove()
     

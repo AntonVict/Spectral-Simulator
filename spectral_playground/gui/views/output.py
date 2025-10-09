@@ -12,12 +12,12 @@ class OutputPanel(ttk.Frame):
         control = ttk.Frame(self)
         control.pack(fill=tk.X, padx=4, pady=2)
 
-        self._toggle_var = tk.BooleanVar(value=True)
-        self.toggle_button = ttk.Button(control, text='Hide Log', command=self._toggle)
+        self._toggle_var = tk.BooleanVar(value=False)  # Start hidden
+        self.toggle_button = ttk.Button(control, text='Show Log', command=self._toggle)
         self.toggle_button.pack(side=tk.RIGHT)
 
         self.container = ttk.Frame(self)
-        self.container.pack(fill=tk.BOTH, expand=True)
+        # Don't pack initially - logs start hidden
 
         self.text = tk.Text(self.container, height=6)
         scrollbar = ttk.Scrollbar(self.container, orient='vertical', command=self.text.yview)

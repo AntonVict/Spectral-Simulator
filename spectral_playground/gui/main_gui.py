@@ -18,6 +18,7 @@ from .data_manager import (
 from .sidebar import Sidebar
 from .state import PlaygroundState
 from .viewer import ViewerPanel
+from .views.statistics_view import StatisticsView
 
 
 class PlaygroundGUI(tk.Tk):
@@ -32,16 +33,28 @@ class PlaygroundGUI(tk.Tk):
         self.save_root = self._setup_save_directory()
         self.state.save_directory = self.save_root
 
-        self.columnconfigure(0, weight=0)
+        # Layout: Sidebar | Notebook
+        self.columnconfigure(0, weight=0)  # Fixed width for sidebar
         self.columnconfigure(1, weight=1)
-        self.rowconfigure(0, weight=3)  # Top area (composite view) gets 75% priority
-        self.rowconfigure(1, weight=1)  # Bottom area (analysis panels) gets 25% priority, now resizable!
+        self.rowconfigure(0, weight=1)
 
         self.sidebar = Sidebar(self, self._log)
-        self.sidebar.grid(row=0, column=0, sticky='nsw', padx=4, pady=4)
+        self.sidebar.grid(row=0, column=0, sticky='nsew', padx=4, pady=4)
+
+        # Create tabbed notebook for Visualization and Statistics
+        self.notebook = ttk.Notebook(self)
+        self.notebook.grid(row=0, column=1, sticky='nsew', padx=4, pady=4)
+
+        # Tab 1: Visualization (existing composite view + bottom panel)
+        self.viz_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.viz_frame, text='Visualization')
+        
+        self.viz_frame.columnconfigure(0, weight=1)
+        self.viz_frame.rowconfigure(0, weight=3)  # Composite view
+        self.viz_frame.rowconfigure(1, weight=1)  # Bottom panel
 
         self.viewer = ViewerPanel(
-            self,
+            self.viz_frame,
             self.state,
             on_generate=self.generate_data,
             on_load=self.load_dataset,
@@ -52,18 +65,30 @@ class PlaygroundGUI(tk.Tk):
             on_channels_changed=self._on_channels_changed,
             on_expand_composite=self._expand_composite_view,
         )
-        self.viewer.grid(row=0, column=1, sticky='nsew')
+        self.viewer.grid(row=0, column=0, sticky='nsew')
 
         self.bottom = BottomPanel(
-            self, 
+            self.viz_frame, 
             self.state, 
             on_fluor_selection_changed=self._on_fluor_selection_changed,
             on_open_full_inspector=self._open_full_inspector,
             get_data_callback=lambda: self.state.data,
             get_fluorophore_names_callback=self._get_fluorophore_names
         )
-        self.bottom.grid(row=1, column=0, columnspan=2, sticky='nsew', padx=8, pady=8)
+        self.bottom.grid(row=1, column=0, sticky='nsew', padx=8, pady=8)
         self.bottom.configure_expanders(self._expand_spectral_view, self._expand_abundance_view)
+
+        # Tab 2: Statistics
+        self.stats_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.stats_frame, text='Statistical Analysis')
+        
+        self.statistics_view = StatisticsView(
+            self.stats_frame,
+            self.state,
+            log_callback=self._log,
+            open_inspector_callback=self._open_inspector_with_selection
+        )
+        self.statistics_view.pack(fill=tk.BOTH, expand=True)
 
         self.after(100, self._show_startup_message)
 
@@ -280,6 +305,14 @@ class PlaygroundGUI(tk.Tk):
         
         Args:
             object_ids: Optional list of object IDs to select when opening
+        """
+        self.viewer._open_inspector(object_ids)
+    
+    def _open_inspector_with_selection(self, object_ids: list) -> None:
+        """Open Object Inspector with specific objects selected (for Statistics view).
+        
+        Args:
+            object_ids: List of object IDs to select
         """
         self.viewer._open_inspector(object_ids)
     

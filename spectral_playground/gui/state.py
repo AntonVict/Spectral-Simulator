@@ -8,8 +8,10 @@ import numpy as np
 if TYPE_CHECKING:  # pragma: no cover - imports for type hints only
     from spectral_playground.core.spectra import SpectralSystem
     from spectral_playground.core.spatial import FieldSpec
+    from spectral_playground.core.geometry import GeometricScene
 else:
     SpectralSystem = FieldSpec = Any  # type: ignore
+    GeometricScene = Any  # type: ignore
 
 
 Array = np.ndarray
@@ -25,6 +27,7 @@ class PlaygroundData:
     M: Optional[Array] = None
     spectral: Optional['SpectralSystem'] = None
     field: Optional['FieldSpec'] = None
+    geometric_scene: Optional['GeometricScene'] = None
     metadata: Dict[str, Any] = dataclass_field(default_factory=dict)
 
     def clear(self) -> None:
@@ -34,11 +37,16 @@ class PlaygroundData:
         self.M = None
         self.spectral = None
         self.field = None
+        self.geometric_scene = None
         self.metadata = {}
 
     @property
     def has_data(self) -> bool:
         return self.Y is not None and self.A is not None and self.field is not None and self.spectral is not None
+    
+    @property
+    def has_geometric_data(self) -> bool:
+        return self.geometric_scene is not None and len(self.geometric_scene) > 0
 
 
 @dataclass
