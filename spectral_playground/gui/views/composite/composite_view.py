@@ -345,11 +345,16 @@ class CompositeView:
             return
         
         # Check if we should handle object selection
-        if self.object_overlay.show_objects.get() and self.spectral_mode == SpectralMode.NONE:
+        if self.spectral_mode == SpectralMode.NONE:
             axes = self.figure.get_axes()
             if not axes:
                 return
             ax = axes[0]
+            
+            # Auto-enable object overlay if user clicks and it's disabled
+            if not self.object_overlay.show_objects.get():
+                self.object_overlay.show_objects.set(True)
+                self._toggle_object_overlay()
             
             nearest_id = self.object_overlay.find_nearest_object(
                 event.xdata, event.ydata, self._current_data, ax, max_distance=10.0

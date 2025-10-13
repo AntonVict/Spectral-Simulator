@@ -64,6 +64,7 @@ class PlaygroundGUI(tk.Tk):
             on_open_folder=self.open_save_directory,
             on_channels_changed=self._on_channels_changed,
             on_expand_composite=self._expand_composite_view,
+            on_object_selection_changed=self._on_composite_object_selection,
         )
         self.viewer.grid(row=0, column=0, sticky='nsew')
 

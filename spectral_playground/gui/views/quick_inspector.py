@@ -113,7 +113,11 @@ class QuickInspectorPanel(ttk.Frame):
     def set_selection(self, object_ids: List[int]):
         """Update the selected objects."""
         self.selected_object_ids = object_ids
-        self._update_display()
+        # Refresh objects if not already loaded, otherwise just update display
+        if not self.all_objects:
+            self.refresh_objects()
+        else:
+            self._update_display()
     
     def refresh_objects(self):
         """Refresh object list from current dataset."""

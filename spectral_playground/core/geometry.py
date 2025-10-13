@@ -93,7 +93,7 @@ class GeometricScene:
             return
         
         # Performance guard: warn for very large scenes
-        if n > 20000:
+        if n > 200000:
             import warnings
             warnings.warn(
                 f"Skipping overlap precomputation for {n} objects (would be very slow). "

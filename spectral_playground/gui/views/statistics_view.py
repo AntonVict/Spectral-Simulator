@@ -488,7 +488,7 @@ class StatisticsView(ttk.Frame):
                     return
             
             # Warn if object count is very high (overlap precomputation)
-            if n_objects > 15000:
+            if n_objects > 500000:
                 self.log(f'Warning: {n_objects:,} objects may take 10-60s for overlap analysis...')
                 messagebox.showinfo(
                     'Large Dataset',

@@ -25,10 +25,12 @@ class ViewerPanel(ttk.Frame):
         on_open_folder: Callable[[], None],
         on_channels_changed: Callable[[], None],
         on_expand_composite: Callable[[], None],
+        on_object_selection_changed: Callable[[list], None],
     ) -> None:
         super().__init__(parent)
         self.state = state
         self.on_channels_changed = on_channels_changed
+        self.on_object_selection_changed = on_object_selection_changed
 
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
@@ -176,7 +178,5 @@ class ViewerPanel(ttk.Frame):
     
     def _on_object_selection_changed(self, object_ids: list) -> None:
         """Handle object selection changes from CompositeView."""
-        # Propagate to parent (main GUI) which will update QuickInspector
-        parent = self.master
-        if hasattr(parent, '_on_composite_object_selection'):
-            parent._on_composite_object_selection(object_ids)
+        # Call the callback directly
+        self.on_object_selection_changed(object_ids)
