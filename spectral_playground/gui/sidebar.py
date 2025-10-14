@@ -9,7 +9,7 @@ from spectral_playground.core.spectra import Fluorophore
 
 from .data_manager import GenerationConfig
 from .fluorophore_editor import FluorophoreListManager
-from .object_layers import ObjectLayersManager
+from .objects import ObjectLayersManager
 from .settings_panels import (
     WavelengthGridPanel,
     DetectionChannelsPanel,
