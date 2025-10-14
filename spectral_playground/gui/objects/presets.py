@@ -212,7 +212,7 @@ class PresetGenerator:
         
         for fluor_idx in range(num_fluors):
             # Random parameters
-            sigma = random.uniform(0.8, 2.5)
+            sigma = random.uniform(0.1, 1.5)
             radius = 2.0 * sigma
             count = random.randint(500, 2000)  # Match multi-fluorophore counts
             

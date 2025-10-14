@@ -21,6 +21,7 @@ class ViewerPanel(ttk.Frame):
         on_load: Callable[[], None],
         on_save_dataset: Callable[[], None],
         on_save_composite: Callable[[], None],
+        on_export_tiff: Callable[[], None],
         on_export_plots: Callable[[], None],
         on_open_folder: Callable[[], None],
         on_channels_changed: Callable[[], None],
@@ -57,6 +58,7 @@ class ViewerPanel(ttk.Frame):
         ttk.Button(actions_group, text='Load Dataset', command=on_load, width=14).pack(pady=2)
         ttk.Button(actions_group, text='Save Dataset', command=on_save_dataset, width=14).pack(pady=2)
         ttk.Button(actions_group, text='Save Composite', command=on_save_composite, width=14).pack(pady=2)
+        ttk.Button(actions_group, text='Export TIFF', command=on_export_tiff, width=14).pack(pady=2)
         ttk.Button(actions_group, text='Export Plots', command=on_export_plots, width=14).pack(pady=2)
         ttk.Button(actions_group, text='Open Save Folder', command=on_open_folder, width=14).pack(pady=(2, 0))
 

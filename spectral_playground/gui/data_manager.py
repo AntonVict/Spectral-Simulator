@@ -159,6 +159,31 @@ def save_composite(path: str, rgb: np.ndarray, format: str = 'PNG') -> None:
     SpectralImageIO.save_composite_image(rgb, path, format)
 
 
+def save_multichannel_tiff(
+    path: str, 
+    data: PlaygroundData,
+    bit_depth: int = 16,
+    normalization: str = "per_channel"
+) -> None:
+    """Save multi-channel TIFF from spectral data.
+    
+    Args:
+        path: Output file path
+        data: PlaygroundData containing Y, spectral system, and field
+        bit_depth: Output bit depth (8, 16, or 32)
+        normalization: Normalization strategy ("per_channel", "global", or "none")
+    """
+    SpectralImageIO.save_multichannel_tiff(
+        Y=data.Y,
+        field_shape=data.field.shape,
+        channels=data.spectral.channels,
+        filepath=path,
+        bit_depth=bit_depth,
+        normalization=normalization,
+        pixel_size_nm=data.field.pixel_size_nm
+    )
+
+
 def save_plots(
     output_dir: str,
     rgb: np.ndarray,

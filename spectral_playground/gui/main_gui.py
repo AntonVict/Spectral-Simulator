@@ -14,6 +14,7 @@ from .data_manager import (
     save_composite,
     save_dataset,
     save_plots,
+    save_multichannel_tiff,
 )
 from .sidebar import Sidebar
 from .state import PlaygroundState
@@ -60,6 +61,7 @@ class PlaygroundGUI(tk.Tk):
             on_load=self.load_dataset,
             on_save_dataset=self.save_dataset,
             on_save_composite=self.save_composite,
+            on_export_tiff=self.export_multichannel_tiff,
             on_export_plots=self.export_plots,
             on_open_folder=self.open_save_directory,
             on_channels_changed=self._on_channels_changed,
@@ -184,6 +186,54 @@ class PlaygroundGUI(tk.Tk):
         except Exception as exc:  # pragma: no cover
             messagebox.showerror('Save failed', str(exc))
             self._log(f'Error saving composite: {exc}')
+
+    def export_multichannel_tiff(self) -> None:
+        """Export multi-channel TIFF with all spectral data."""
+        if not self.state.data.has_data:
+            messagebox.showinfo('No Data', 'Generate or load data before exporting.')
+            return
+        
+        filepath = filedialog.asksaveasfilename(
+            title='Export Multi-Channel TIFF',
+            initialdir=self._default_path('images'),
+            initialfile='spectral_channels.tif',
+            defaultextension='.tif',
+            filetypes=[('TIFF image', '*.tif;*.tiff')],
+        )
+        if not filepath:
+            return
+        
+        # Simple dialog for normalization choice
+        choice = messagebox.askquestion(
+            'Normalization',
+            'Normalize channels?\n\n'
+            'YES: Scale each channel 0-65535 (recommended for visualization)\n'
+            'NO: Keep raw photon counts as 32-bit float (best for analysis)',
+            icon='question'
+        )
+        
+        normalization = "per_channel" if choice == 'yes' else "none"
+        bit_depth = 16 if choice == 'yes' else 32
+        
+        try:
+            save_multichannel_tiff(
+                filepath, 
+                self.state.data,
+                bit_depth=bit_depth,
+                normalization=normalization
+            )
+            rel = os.path.relpath(filepath, self.save_root) if filepath.startswith(self.save_root) else filepath
+            norm_str = f"{bit_depth}-bit, {normalization} normalization"
+            self._log(f'Exported multi-channel TIFF: {rel} ({norm_str})')
+            messagebox.showinfo(
+                'Export Complete',
+                f'Saved {len(self.state.data.spectral.channels)} channels to TIFF\n'
+                f'Format: {norm_str}\n'
+                f'Compatible with ImageJ, FIJI, etc.'
+            )
+        except Exception as exc:  # pragma: no cover
+            messagebox.showerror('Export failed', str(exc))
+            self._log(f'Error exporting TIFF: {exc}')
 
     def export_plots(self) -> None:
         if not self.state.data.has_data:

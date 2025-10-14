@@ -11,7 +11,8 @@ dependencies = [
   "numpy>=1.24",
   "scipy>=1.10",
   "matplotlib>=3.6",
-  "pandas>=1.5"
+  "pandas>=1.5",
+  "tifffile>=2023.0"
 ]
 
 [project.optional-dependencies]

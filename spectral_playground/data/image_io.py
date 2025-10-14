@@ -11,6 +11,7 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
+import tifffile
 
 from .dataset import SynthDataset
 from ..core.spectra import SpectralSystem, Channel, Fluorophore
@@ -48,6 +49,109 @@ class SpectralImageIO:
             img.save(filepath, format="JPEG", dpi=(dpi, dpi), quality=95, optimize=True)
         else:
             raise ValueError(f"Unsupported format: {format}")
+    
+    @staticmethod
+    def save_multichannel_tiff(
+        Y: np.ndarray,
+        field_shape: Tuple[int, int],
+        channels: list,
+        filepath: str,
+        bit_depth: int = 16,
+        normalization: str = "per_channel",
+        pixel_size_nm: Optional[float] = None
+    ) -> None:
+        """Save multi-channel spectral data as TIFF.
+        
+        Creates a multi-page TIFF where each page is one detection channel.
+        Compatible with ImageJ, FIJI, and other microscopy software.
+        
+        Args:
+            Y: Channel data, shape (L, H*W) or (L, H, W)
+            field_shape: Spatial dimensions (H, W)
+            channels: List of Channel objects with metadata
+            filepath: Output file path (.tif or .tiff)
+            bit_depth: Output bit depth (8, 16, or 32)
+            normalization: Scaling strategy:
+                - "per_channel": Each channel scaled to its own max (default)
+                - "global": All channels use same scale
+                - "none": Keep raw values (photon counts)
+            pixel_size_nm: Physical pixel size in nanometers (for metadata)
+        """
+        H, W = field_shape
+        L = Y.shape[0]
+        
+        # Reshape if needed
+        if Y.ndim == 2:
+            Y_shaped = Y.reshape(L, H, W)
+        else:
+            Y_shaped = Y
+        
+        # Prepare channel data based on normalization
+        if normalization == "none":
+            # Keep raw values - use float32
+            channel_stack = Y_shaped.astype(np.float32)
+            bit_depth = 32  # Force 32-bit for raw data
+        else:
+            # Normalize data
+            if normalization == "global":
+                # Global normalization across all channels
+                global_max = np.max(Y_shaped)
+                if global_max > 0:
+                    normalized = Y_shaped / global_max
+                else:
+                    normalized = Y_shaped
+            else:  # per_channel
+                # Per-channel normalization
+                normalized = np.zeros_like(Y_shaped, dtype=np.float32)
+                for i in range(L):
+                    channel_max = np.max(Y_shaped[i])
+                    if channel_max > 0:
+                        normalized[i] = Y_shaped[i] / channel_max
+                    else:
+                        normalized[i] = Y_shaped[i]
+            
+            # Convert to appropriate bit depth
+            if bit_depth == 8:
+                channel_stack = (np.clip(normalized, 0, 1) * 255).astype(np.uint8)
+            elif bit_depth == 16:
+                channel_stack = (np.clip(normalized, 0, 1) * 65535).astype(np.uint16)
+            else:  # 32-bit float
+                channel_stack = normalized.astype(np.float32)
+        
+        # Build metadata
+        metadata = {
+            'axes': 'CYX',  # Channel, Y, X
+            'Channel': {'Name': [ch.name for ch in channels]},
+        }
+        
+        # Add channel-specific metadata
+        channel_metadata = {}
+        for idx, ch in enumerate(channels):
+            channel_metadata[f'Channel_{idx}'] = {
+                'Name': ch.name,
+                'CenterWavelength_nm': ch.center_nm,
+                'Bandwidth_nm': ch.bandwidth_nm,
+            }
+        metadata['ChannelInfo'] = channel_metadata
+        
+        # Add physical pixel size if available
+        if pixel_size_nm is not None:
+            # Convert nm to micrometers for standard microscopy metadata
+            pixel_size_um = pixel_size_nm / 1000.0
+            metadata['PhysicalSizeX'] = pixel_size_um
+            metadata['PhysicalSizeY'] = pixel_size_um
+            metadata['PhysicalSizeXUnit'] = 'µm'
+            metadata['PhysicalSizeYUnit'] = 'µm'
+        
+        # Save as OME-TIFF with metadata
+        tifffile.imwrite(
+            filepath,
+            channel_stack,
+            photometric='minisblack',
+            metadata=metadata,
+            compression='deflate',
+            compressionargs={'level': 6}
+        )
     
     @staticmethod
     def save_full_dataset(
