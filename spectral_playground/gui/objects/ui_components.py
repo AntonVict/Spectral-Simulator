@@ -19,11 +19,35 @@ class ObjectLayersUI:
         Args:
             manager: ObjectLayersManager instance with all state and callbacks
         """
-        # Help text only
-        help_frame = ttk.Frame(manager.parent_frame)
-        help_frame.pack(fill=tk.X, padx=4, pady=(4,0))
-        ttk.Label(help_frame, text="Place specific fluorophores in regions", 
-                 foreground="gray", font=('TkDefaultFont', 8)).pack(side=tk.LEFT)
+        # Global composition settings
+        settings_frame = ttk.LabelFrame(manager.parent_frame, text="Multi-Fluorophore Settings")
+        settings_frame.pack(fill=tk.X, padx=4, pady=4)
+        
+        settings_grid = ttk.Frame(settings_frame)
+        settings_grid.pack(fill=tk.X, padx=4, pady=4)
+        
+        # Row 0: Object Mode
+        ttk.Label(settings_grid, text="Object Mode:").grid(row=0, column=0, sticky='w', padx=2, pady=2)
+        mode_frame = ttk.Frame(settings_grid)
+        mode_frame.grid(row=0, column=1, columnspan=2, sticky='w', padx=2, pady=2)
+        ttk.Radiobutton(mode_frame, text="Single Fluorophore", 
+                        variable=manager.object_mode, value="single").pack(side=tk.LEFT, padx=4)
+        ttk.Radiobutton(mode_frame, text="Multi-Fluorophore", 
+                        variable=manager.object_mode, value="multi").pack(side=tk.LEFT, padx=4)
+        
+        # Row 1: Fluorophore Configuration
+        ttk.Label(settings_grid, text="Fluorophore Roles:").grid(row=1, column=0, sticky='w', padx=2, pady=2)
+        ttk.Button(settings_grid, text="Configure...", 
+                   command=manager._open_fluorophore_config).grid(row=1, column=1, sticky='w', padx=2, pady=2)
+        
+        # Add a label showing current config
+        manager.fluor_config_label = ttk.Label(settings_grid, text="F1,F2 (ratio) | F3+ (binary)", 
+                                                foreground='gray', font=('TkDefaultFont', 8))
+        manager.fluor_config_label.grid(row=1, column=2, sticky='w', padx=2, pady=2)
+        
+        # Row 2: Dirichlet option
+        ttk.Checkbutton(settings_grid, text="Use Dirichlet distribution", 
+                        variable=manager.use_dirichlet).grid(row=2, column=0, columnspan=3, sticky='w', padx=2, pady=2)
 
         obj_main = ttk.Frame(manager.parent_frame)
         obj_main.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
@@ -44,14 +68,25 @@ class ObjectLayersUI:
         ttk.Button(btns, text="Add", width=6, command=manager._add_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Remove", width=6, command=manager._remove_object).pack(side=tk.LEFT, padx=(0,2))
         ttk.Button(btns, text="Copy", width=6, command=manager._duplicate_object).pack(side=tk.LEFT, padx=(0,2))
-        ttk.Button(btns, text="Quick-Assign", width=12, command=manager._quick_assign_sample).pack(side=tk.LEFT)
+        
+        # Two quick-assign buttons
+        ttk.Button(btns, text="Quick-Assign (Single)", width=18, 
+                  command=manager._quick_assign_single).pack(side=tk.LEFT, padx=(0,2))
+        ttk.Button(btns, text="Quick-Assign (Multi)", width=17, 
+                  command=manager._quick_assign_multi).pack(side=tk.LEFT)
 
-        # Simplified object list
-        manager.obj_tree = ttk.Treeview(list_frame, columns=("fluor","kind","region","count"), 
-                                       show='headings', height=4)
-        for col, text, w in [("fluor","Fluor",50),("kind","Kind",80),("region","Region",80),("count","Count",50)]:
+        # Object list with new columns: Name | Composition | Count | Radius
+        manager.obj_tree = ttk.Treeview(list_frame, columns=("name", "composition", "count", "radius"), 
+                                       show='headings', height=6)
+        columns_config = [
+            ("name", "Name", 60),
+            ("composition", "Composition", 120),
+            ("count", "Count", 50),
+            ("radius", "Radius", 60)
+        ]
+        for col, text, width in columns_config:
             manager.obj_tree.heading(col, text=text, anchor='w')
-            manager.obj_tree.column(col, width=w, stretch=True, anchor='w')
+            manager.obj_tree.column(col, width=width, stretch=True, anchor='w')
         manager.obj_tree.grid(row=1, column=0, sticky='nsew')
         obj_scroll = ttk.Scrollbar(list_frame, orient='vertical', command=manager.obj_tree.yview)
         manager.obj_tree.configure(yscrollcommand=obj_scroll.set)
@@ -67,125 +102,67 @@ class ObjectLayersUI:
     
     @staticmethod
     def build_properties_tab(manager: 'ObjectLayersManager', notebook: ttk.Notebook) -> None:
-        """Build the properties tab for object editing with template support."""
+        """Build the properties tab with composition editor."""
         basic_tab = ttk.Frame(notebook)
         notebook.add(basic_tab, text="Properties")
         
-        # Row 0: Composition Mode Selection
-        mode_frame = ttk.LabelFrame(basic_tab, text="Composition Mode")
-        mode_frame.grid(row=0, column=0, columnspan=4, sticky='ew', pady=(0,8))
+        row = 0
         
-        ttk.Radiobutton(mode_frame, text="Single Fluorophore", 
-                       variable=manager.composition_mode, value="single",
-                       command=manager._on_composition_mode_change).pack(side=tk.LEFT, padx=4)
-        ttk.Radiobutton(mode_frame, text="Multi-Fluorophore Template", 
-                       variable=manager.composition_mode, value="template",
-                       command=manager._on_composition_mode_change).pack(side=tk.LEFT, padx=4)
+        # Object name (editable)
+        ttk.Label(basic_tab, text="Name:").grid(row=row, column=0, sticky='w', pady=4, padx=(0,4))
+        ttk.Entry(basic_tab, textvariable=manager.obj_name, width=15).grid(row=row, column=1, sticky='w', pady=4)
+        manager.obj_name.trace('w', lambda *args: manager.object_editor.auto_save())
+        row += 1
         
-        # Row 1: Fluorophore/Template Selection (dynamic based on mode)
-        manager.fluor_selection_frame = ttk.Frame(basic_tab)
-        manager.fluor_selection_frame.grid(row=1, column=0, columnspan=4, sticky='ew', pady=(0,8))
+        # Per-object mode selector
+        ttk.Label(basic_tab, text="Mode:").grid(row=row, column=0, sticky='w', pady=4, padx=(0,4))
+        mode_frame = ttk.Frame(basic_tab)
+        mode_frame.grid(row=row, column=1, columnspan=2, sticky='w', pady=4)
+        ttk.Radiobutton(mode_frame, text="Single", variable=manager.obj_mode, 
+                       value="single", command=lambda: manager._on_mode_change()).pack(side=tk.LEFT, padx=(0,4))
+        ttk.Radiobutton(mode_frame, text="Multi", variable=manager.obj_mode, 
+                       value="multi", command=lambda: manager._on_mode_change()).pack(side=tk.LEFT)
+        row += 1
         
-        # Single fluorophore selector
-        manager.single_fluor_frame = ttk.Frame(manager.fluor_selection_frame)
-        ttk.Label(manager.single_fluor_frame, text="Fluorophore:").pack(side=tk.LEFT, padx=(0,4))
-        manager.fluor_combo = ttk.Combobox(manager.single_fluor_frame, textvariable=manager.obj_fluor, 
-                                          values=manager._get_fluorophore_list(), 
-                                          state='readonly', width=15)
-        manager.fluor_combo.pack(side=tk.LEFT)
-        manager.fluor_combo.bind('<<ComboboxSelected>>', lambda e: manager._auto_save())
-        
-        # Template selector
-        manager.template_frame = ttk.Frame(manager.fluor_selection_frame)
-        ttk.Label(manager.template_frame, text="Template:").pack(side=tk.LEFT, padx=(0,4))
-        manager.template_combo = ttk.Combobox(manager.template_frame, 
-                                             textvariable=manager.composition_template,
-                                             values=manager.template_manager.get_template_names(),
-                                             state='readonly', width=20)
-        manager.template_combo.pack(side=tk.LEFT, padx=(0,4))
-        manager.template_combo.bind('<<ComboboxSelected>>', lambda e: manager._auto_save())
-        
-        ttk.Button(manager.template_frame, text="Manage Templates", 
-                  command=manager._open_template_manager, width=15).pack(side=tk.LEFT)
-        
-        # Row 2: Kind
-        ttk.Label(basic_tab, text="Kind:").grid(row=2, column=0, sticky='w', padx=(0,4))
+        # Object kind
+        ttk.Label(basic_tab, text="Kind:").grid(row=row, column=0, sticky='w', pady=4, padx=(0,4))
         manager.kind_combo = ttk.Combobox(basic_tab, textvariable=manager.obj_kind, 
-                                         values=["circles","boxes","gaussian_blobs","dots"], 
-                                         state='readonly', width=15)
-        manager.kind_combo.grid(row=2, column=1, columnspan=3, sticky='w')
-        manager.kind_combo.bind('<<ComboboxSelected>>', lambda e: (manager._on_kind_change(), manager._auto_save()))
-
-        # Row 3: Count and Lambda (synchronized)
-        count_lambda_frame = ttk.LabelFrame(basic_tab, text="Object Density")
-        count_lambda_frame.grid(row=3, column=0, columnspan=4, sticky='ew', pady=(6,0))
+                                          values=['gaussian_blobs', 'dots', 'circles', 'boxes'], 
+                                          state='readonly', width=15)
+        manager.kind_combo.grid(row=row, column=1, sticky='w', pady=4)
+        manager.kind_combo.bind('<<ComboboxSelected>>', lambda e: manager.object_editor.auto_save())
+        row += 1
         
-        # Left column: Count
-        count_col = ttk.Frame(count_lambda_frame)
-        count_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
+        # Composition editor container (will be dynamically populated)
+        manager.comp_editor_frame = ttk.LabelFrame(basic_tab, text="Composition")
+        manager.comp_editor_frame.grid(row=row, column=0, columnspan=4, sticky='ew', pady=8)
+        row += 1
         
-        ttk.Label(count_col, text="Count:").pack(anchor='w')
-        count_entry = ttk.Entry(count_col, textvariable=manager.obj_count, width=10)
-        count_entry.pack(anchor='w')
-        count_entry.bind('<KeyRelease>', lambda e: manager._on_count_changed())
+        # Count
+        ttk.Label(basic_tab, text="Count:").grid(row=row, column=0, sticky='w', pady=4, padx=(0,4))
+        ttk.Spinbox(basic_tab, from_=1, to=5000, textvariable=manager.obj_count, 
+                   width=15).grid(row=row, column=1, sticky='w', pady=4)
+        manager.obj_count.trace('w', lambda *args: manager.object_editor.auto_save())
+        row += 1
         
-        manager.count_display_label = ttk.Label(count_col, text="→ λ = 0.000000 obj/px²", 
-                                               font=('TkDefaultFont', 7), foreground='gray')
-        manager.count_display_label.pack(anchor='w', pady=(2,0))
+        # Radius (not sigma)
+        ttk.Label(basic_tab, text="Radius:").grid(row=row, column=0, sticky='w', pady=4, padx=(0,4))
+        ttk.Entry(basic_tab, textvariable=manager.obj_radius, width=15).grid(row=row, column=1, sticky='w', pady=4)
+        ttk.Label(basic_tab, text="px (effective)").grid(row=row, column=2, sticky='w', pady=4, padx=(4,0))
+        # Sync radius ↔ sigma: sigma = radius / 2.0
+        manager.obj_radius.trace('w', lambda *args: manager.object_editor.sync_radius_to_sigma())
+        row += 1
         
-        # Right column: Lambda
-        lambda_col = ttk.Frame(count_lambda_frame)
-        lambda_col.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4, pady=4)
-        
-        ttk.Label(lambda_col, text="Spatial intensity (λ):").pack(anchor='w')
-        lambda_entry = ttk.Entry(lambda_col, textvariable=manager.obj_lambda, width=10)
-        lambda_entry.pack(anchor='w')
-        lambda_entry.bind('<KeyRelease>', lambda e: manager._on_lambda_changed())
-        
-        manager.lambda_display_label = ttk.Label(lambda_col, text="→ n ≈ 0 objects", 
-                                                font=('TkDefaultFont', 7), foreground='gray')
-        manager.lambda_display_label.pack(anchor='w', pady=(2,0))
-        
-        # Info label
-        ttk.Label(count_lambda_frame, text="ℹ️ Count and spatial intensity are linked: λ = n / area", 
-                  font=('TkDefaultFont', 7, 'italic'), foreground='#666').pack(pady=(0,4))
-        
-        # Row 4: Size
-        manager.size_label = ttk.Label(basic_tab, text="Size (px):")
-        manager.size_label.grid(row=4, column=0, sticky='w', padx=(0,4), pady=(6,0))
-        manager.size_entry = ttk.Entry(basic_tab, textvariable=manager.obj_size, width=10)
-        manager.size_entry.grid(row=4, column=1, sticky='w', pady=(6,0))
-        manager.size_entry.bind('<KeyRelease>', lambda e: manager._auto_save())
-
-        # Row 5: Intensity range
-        ttk.Label(basic_tab, text="Spectral intensity (brightness):").grid(row=5, column=0, sticky='w', pady=(6,0))
-        intensity_frame = ttk.Frame(basic_tab)
-        intensity_frame.grid(row=5, column=1, columnspan=3, sticky='w', pady=(6,0))
-        i_min_entry = ttk.Entry(intensity_frame, textvariable=manager.obj_i_min, width=6)
-        i_min_entry.pack(side=tk.LEFT)
-        i_min_entry.bind('<KeyRelease>', lambda e: manager._auto_save())
-        ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
-        i_max_entry = ttk.Entry(intensity_frame, textvariable=manager.obj_i_max, width=6)
-        i_max_entry.pack(side=tk.LEFT)
-        i_max_entry.bind('<KeyRelease>', lambda e: manager._auto_save())
-        
-        # Row 6: Spot sigma (for Gaussian blobs and dots only)
-        manager.sigma_label = ttk.Label(basic_tab, text="Spot σ (px):")
-        manager.sigma_label.grid(row=6, column=0, sticky='w', pady=(6,0))
-        manager.sigma_entry = ttk.Entry(basic_tab, textvariable=manager.obj_sigma, width=10)
-        manager.sigma_entry.grid(row=6, column=1, columnspan=3, sticky='w', pady=(6,0))
-        manager.sigma_entry.bind('<KeyRelease>', lambda e: manager._auto_save())
-        
-        # Row 7: Info text about radius derivation
-        ttk.Label(
-            basic_tab,
-            text="ℹ️ Radius derived from object type: circles/boxes=size_px, gaussian=2×σ",
-            font=('TkDefaultFont', 7, 'italic'),
-            foreground='gray'
-        ).grid(row=7, column=0, columnspan=4, sticky='w', pady=(8,0))
-        
-        # Initialize mode UI
-        manager._on_composition_mode_change()
+        # Intensity range
+        ttk.Label(basic_tab, text="Intensity:").grid(row=row, column=0, sticky='w', pady=4, padx=(0,4))
+        int_frame = ttk.Frame(basic_tab)
+        int_frame.grid(row=row, column=1, columnspan=2, sticky='w', pady=4)
+        ttk.Entry(int_frame, textvariable=manager.obj_i_min, width=6).pack(side=tk.LEFT, padx=2)
+        ttk.Label(int_frame, text="to").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(int_frame, textvariable=manager.obj_i_max, width=6).pack(side=tk.LEFT, padx=2)
+        manager.obj_i_min.trace('w', lambda *args: manager.object_editor.auto_save())
+        manager.obj_i_max.trace('w', lambda *args: manager.object_editor.auto_save())
+        row += 1
 
     @staticmethod
     def build_region_tab(manager: 'ObjectLayersManager', notebook: ttk.Notebook) -> None:
@@ -197,7 +174,7 @@ class ObjectLayersUI:
         region_combo = ttk.Combobox(region_tab, textvariable=manager.obj_region_type, 
                                     values=["full","rect","circle"], state='readonly', width=12)
         region_combo.grid(row=0, column=1, sticky='w', padx=(0,8))
-        region_combo.bind('<<ComboboxSelected>>', lambda e: (manager._on_region_type_change(), manager._auto_save()))
+        region_combo.bind('<<ComboboxSelected>>', lambda e: (manager.object_editor.on_region_type_change(), manager.object_editor.auto_save()))
 
         # Container for dynamic region parameters
         manager.region_params_frame = ttk.Frame(region_tab)
@@ -225,7 +202,7 @@ class ObjectLayersUI:
                 ttk.Label(rect_frame, text=label).grid(row=0, column=i*2, sticky='w', padx=(0,2))
                 entry = ttk.Entry(rect_frame, textvariable=var, width=6)
                 entry.grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
-                entry.bind('<KeyRelease>', lambda e: manager._auto_save())
+                entry.bind('<KeyRelease>', lambda e: manager.object_editor.auto_save())
                 
         elif region_type == "circle":
             # Circle parameters only
@@ -237,7 +214,7 @@ class ObjectLayersUI:
                 ttk.Label(circle_frame, text=label).grid(row=0, column=i*2, sticky='w', padx=(0,2))
                 entry = ttk.Entry(circle_frame, textvariable=var, width=8)
                 entry.grid(row=0, column=i*2+1, sticky='w', padx=(0,8))
-                entry.bind('<KeyRelease>', lambda e: manager._auto_save())
+                entry.bind('<KeyRelease>', lambda e: manager.object_editor.auto_save())
                 
         else:  # "full"
             # No parameters needed for full image

@@ -1,16 +1,17 @@
-"""Object layers manager for the spectral visualization GUI."""
+"""Object layers manager for the spectral visualization GUI (REFACTORED)."""
 
 from __future__ import annotations
 
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox
 import copy
 from typing import Callable, List, Dict, Any, Tuple
 
-from .templates import TemplateManager
 from .presets import PresetGenerator
 from .ui_components import ObjectLayersUI
-from .dialogs import TemplateEditorDialog
+from .object_editor import ObjectEditor
+from .composition_editor import CompositionEditor
+from .utils import get_fluorophore_list, fluorophore_name_to_index, fluorophore_index_to_name
 
 
 class ObjectLayersManager:
@@ -37,16 +38,30 @@ class ObjectLayersManager:
         self.get_fluorophore_names = get_fluorophore_names_callback
         self.objects: List[Dict[str, Any]] = []
         self.include_base_field = tk.BooleanVar(value=True)
-        self.template_manager = TemplateManager()
         
-        # Object editor variables
-        self.obj_fluor = tk.StringVar(value="F1")  # Stores fluorophore name (e.g., "F1")
+        # Debouncing timers to prevent excessive updates
+        self._save_timer = None
+        self._normalizing = False
+        self._syncing_radius = False
+        
+        # Global composition settings
+        self.object_mode = tk.StringVar(value="single")  # "single" or "multi" - for NEW objects
+        self.num_continuous_fluors = tk.IntVar(value=2)
+        self.continuous_fluor_indices = [0, 1]  # Explicit list of continuous fluorophore indices
+        self.use_dirichlet = tk.BooleanVar(value=True)
+        self.next_object_number = 1  # Auto-increment for object names
+        
+        # Object editor variables (per-object)
+        self.obj_name = tk.StringVar(value="O1")
+        self.obj_mode = tk.StringVar(value="single")  # Per-object mode selector
+        self.obj_fluor = tk.StringVar(value="F1")
         self.obj_kind = tk.StringVar(value="gaussian_blobs")
         self.obj_count = tk.IntVar(value=50)
         self.obj_size = tk.DoubleVar(value=6.0)
         self.obj_i_min = tk.DoubleVar(value=0.5)
         self.obj_i_max = tk.DoubleVar(value=1.5)
         self.obj_sigma = tk.DoubleVar(value=2.0)
+        self.obj_radius = tk.DoubleVar(value=4.0)
         self.obj_region_type = tk.StringVar(value="full")
         self.obj_x0 = tk.IntVar(value=0)
         self.obj_y0 = tk.IntVar(value=0)
@@ -57,12 +72,13 @@ class ObjectLayersManager:
         self.obj_r = tk.DoubleVar(value=40)
         
         # Statistical analysis parameters
-        self.obj_lambda = tk.DoubleVar(value=0.0)  # Spatial intensity (objects/px²)
-        self.count_lambda_sync_lock = False  # Prevent update loops
+        self.obj_lambda = tk.DoubleVar(value=0.0)
+        self.count_lambda_sync_lock = False
         
-        # Composition mode: 'single' or 'template'
-        self.composition_mode = tk.StringVar(value="single")
-        self.composition_template = tk.StringVar(value="F1 Only")
+        # Composition editor variables
+        self.ratio_vars: List[tk.DoubleVar] = []
+        self.binary_fluor_var = tk.StringVar(value="")
+        self.binary_combo = None  # Reference to binary dropdown for dynamic updates
         
         # UI widgets (will be set by UI builder)
         self.obj_tree = None
@@ -80,35 +96,76 @@ class ObjectLayersManager:
         self.sigma_entry = None
         self.region_params_frame = None
         
+        # Initialize sub-components
+        self.object_editor = ObjectEditor(self)
+        self.composition_editor = CompositionEditor(self)
+        
         # Build UI and add presets
         ObjectLayersUI.build_main_ui(self)
         self._add_preset_objects()
         
     # ===== Object Management Methods =====
     
-    def _add_object(self, template_name: str | None = None) -> None:
-        """Add a new object to the list."""
+    def _add_object(self) -> None:
+        """Add a new object with auto-generated name and composition."""
+        num_fluors = len(self.get_fluorophore_names())
+        if num_fluors == 0:
+            self.log("No fluorophores available")
+            return
+        
         # Use current image dimensions for sensible defaults
         H, W = self.get_image_dims()
-        obj = {
-            'kind': 'gaussian_blobs',
-            'region': {'type': 'full'},  # Default to full/global region
-            'count': 25,
-            'size_px': max(3.0, min(W, H) / 20),  # Scale with image size
-            'intensity_min': 0.5,
-            'intensity_max': 1.5,
-            'spot_sigma': max(1.5, min(W, H) / 40),
-        }
+        sigma = max(1.5, min(W, H) / 40)
+        radius = 2.0 * sigma
         
-        # Set composition based on template or default to single fluorophore
-        if template_name:
-            obj['template_name'] = template_name
-            fluor_desc = template_name
+        # Create object based on global mode (for new objects)
+        if self.object_mode.get() == "single":
+            # Classic single-fluorophore object
+            obj = {
+                'name': f'O{self.next_object_number}',
+                'mode': 'single',  # NEW: per-object mode
+                'composition': [{'fluor_index': 0, 'ratio': 1.0}],
+                'binary_fluor': None,
+                'kind': 'gaussian_blobs',
+                'region': {'type': 'full'},
+                'count': 50,
+                'spot_sigma': sigma,
+                'radius': radius,
+                'intensity_min': 0.5,
+                'intensity_max': 1.5,
+                'size_px': max(3.0, min(W, H) / 20),
+            }
         else:
-            obj['fluor_index'] = len(self.objects) % max(1, 3)  # Cycle through 3 fluorophores by default
-            fluor_desc = f"F{obj['fluor_index']+1}"
+            # Multi-fluorophore object
+            from .composition import CompositionGenerator
+            
+            # Compute binary indices (all fluorophores NOT in continuous list)
+            binary_indices = [i for i in range(num_fluors) if i not in self.continuous_fluor_indices]
+            
+            comp_data = CompositionGenerator.generate_composition(
+                num_total_fluors=num_fluors,
+                continuous_indices=self.continuous_fluor_indices,
+                binary_indices=binary_indices,
+                use_dirichlet=self.use_dirichlet.get()
+            )
+            
+            obj = {
+                'name': f'O{self.next_object_number}',
+                'mode': 'multi',  # NEW: per-object mode
+                'composition': comp_data['composition'],
+                'binary_fluor': comp_data['binary_fluor'],
+                'kind': 'gaussian_blobs',
+                'region': {'type': 'full'},
+                'count': 50,
+                'spot_sigma': sigma,
+                'radius': radius,
+                'intensity_min': 0.5,
+                'intensity_max': 1.5,
+                'size_px': max(3.0, min(W, H) / 20),
+            }
         
         self.objects.append(obj)
+        self.next_object_number += 1
         self._refresh_object_list()
         
         # Auto-select the new object
@@ -117,53 +174,92 @@ class ObjectLayersManager:
             self.obj_tree.selection_set(items[-1])
             self._on_object_select()
         
-        self.log(f"Added object {len(self.objects)}: {fluor_desc}, {obj['kind']}")
+        self.log(f"Added {obj['name']}")
 
     def _remove_object(self) -> None:
         """Remove selected object from the list."""
         sel = self.obj_tree.selection()
         if not sel:
-            if self.objects:
-                self.objects.pop()
-        else:
-            idx = self.obj_tree.index(sel[0])
-            if 0 <= idx < len(self.objects):
-                self.objects.pop(idx)
-        self._refresh_object_list()
+            return
+        idx = self.obj_tree.index(sel[0])
+        if 0 <= idx < len(self.objects):
+            removed = self.objects.pop(idx)
+            self._refresh_object_list()
+            self.log(f"Removed object {removed.get('name', 'Unknown')}")
 
     def _duplicate_object(self) -> None:
-        """Duplicate selected object."""
+        """Duplicate the selected object."""
         sel = self.obj_tree.selection()
         if not sel:
             return
         idx = self.obj_tree.index(sel[0])
         if 0 <= idx < len(self.objects):
-            self.objects.append(copy.deepcopy(self.objects[idx]))
+            new_obj = copy.deepcopy(self.objects[idx])
+            new_obj['name'] = f'O{self.next_object_number}'
+            self.next_object_number += 1
+            self.objects.append(new_obj)
             self._refresh_object_list()
+            self.log(f"Duplicated object to {new_obj['name']}")
 
     def _refresh_object_list(self) -> None:
-        """Refresh the object list display."""
+        """Refresh the object tree view."""
+        from .composition import CompositionGenerator
+        
         # Clear tree
-        for i in self.obj_tree.get_children():
-            self.obj_tree.delete(i)
-        # Populate with simplified format
-        for obj in self.objects:
-            # Get fluorophore name/composition
-            if 'template_name' in obj:
-                fluor_name = f"[{obj['template_name']}]"
-            else:
-                fluor_idx = obj.get('fluor_index', 0)
-                fluor_name = self._fluorophore_index_to_name(fluor_idx)
-            
-            kind = obj.get('kind', '')
-            region = obj.get('region', {'type': 'full'})
-            rtxt = region.get('type', 'full')
-            if rtxt == 'rect':
-                rtxt = f"rect({region.get('w',0)}×{region.get('h',0)})"
-            elif rtxt == 'circle':
-                rtxt = f"circle(r={region.get('r',0):.0f})"
+        for item in self.obj_tree.get_children():
+            self.obj_tree.delete(item)
+        
+        # Repopulate
+        for idx, obj in enumerate(self.objects):
+            name = obj.get('name', f'O{idx+1}')
             count = obj.get('count', 0)
-            self.obj_tree.insert('', 'end', values=(fluor_name, kind, rtxt, count))
+            
+            # Get radius (prefer 'radius', fall back to spot_sigma conversion)
+            radius = obj.get('radius', obj.get('spot_sigma', 2.0) * 2.0)
+            
+            # Format composition display
+            composition = obj.get('composition', [])
+            binary_fluor = obj.get('binary_fluor')
+            fluor_names = self.get_fluorophore_names()
+            comp_display = CompositionGenerator.composition_to_display(composition, binary_fluor, fluor_names)
+            
+            self.obj_tree.insert('', 'end', values=(
+                name,
+                comp_display,
+                count,
+                f"{radius:.1f}px"
+            ))
+        
+    def _update_tree_item(self, idx: int) -> None:
+        """Update a single item in the tree (more efficient than full refresh).
+        
+        Args:
+            idx: Index of the object to update
+        """
+        from .composition import CompositionGenerator
+        
+        if not (0 <= idx < len(self.objects)):
+            return
+        
+        obj = self.objects[idx]
+        name = obj.get('name', f'O{idx+1}')
+        count = obj.get('count', 0)
+        radius = obj.get('radius', obj.get('spot_sigma', 2.0) * 2.0)
+        
+        composition = obj.get('composition', [])
+        binary_fluor = obj.get('binary_fluor')
+        fluor_names = self.get_fluorophore_names()
+        comp_display = CompositionGenerator.composition_to_display(composition, binary_fluor, fluor_names)
+        
+        # Get tree item ID
+        items = self.obj_tree.get_children()
+        if idx < len(items):
+            self.obj_tree.item(items[idx], values=(
+                name,
+                comp_display,
+                count,
+                f"{radius:.1f}px"
+            ))
         
     def _on_object_select(self, event=None) -> None:
         """Handle object selection."""
@@ -175,40 +271,52 @@ class ObjectLayersManager:
             return
         obj = self.objects[idx]
         
-        # Update fluorophore dropdown with current fluorophore list
-        self.fluor_combo.config(values=self._get_fluorophore_list())
+        # Backward compatibility: infer mode if not present
+        obj_mode = obj.get('mode')
+        if obj_mode is None:
+            # Infer from composition
+            comp = obj.get('composition', [])
+            obj_mode = 'single' if len(comp) == 1 and comp[0].get('ratio', 1.0) == 1.0 else 'multi'
+            obj['mode'] = obj_mode  # Save for future
         
-        # Check if object uses template or single fluorophore
-        if 'template_name' in obj:
-            # Template mode
-            self.composition_mode.set("template")
-            self.composition_template.set(obj['template_name'])
-            self._on_composition_mode_change()
-        else:
-            # Single fluorophore mode
-            self.composition_mode.set("single")
-            fluor_idx = int(obj.get('fluor_index', 0))
-            fluor_name = self._fluorophore_index_to_name(fluor_idx)
-            self.obj_fluor.set(fluor_name)
-            self._on_composition_mode_change()
+        # Set per-object mode and rebuild UI
+        self.obj_mode.set(obj_mode)
+        self._on_mode_change(trigger_save=False)  # Rebuild UI without saving (we're loading)
+        
+        # Update name
+        self.obj_name.set(str(obj.get('name', f'O{idx+1}')))
+        
+        # Update composition - load ratios and binary (for multi mode)
+        composition = obj.get('composition', [])
+        binary_fluor_idx = obj.get('binary_fluor')
+        
+        # Set ratio sliders for continuous fluorophores
+        if hasattr(self, 'ratio_vars'):
+            # ratio_vars[i] corresponds to continuous_fluor_indices[i]
+            for i, fluor_idx in enumerate(self.continuous_fluor_indices):
+                if i < len(self.ratio_vars):
+                    # Find this fluorophore in composition
+                    ratio = next((c['ratio'] for c in composition if c['fluor_index'] == fluor_idx), 0.0)
+                    self.ratio_vars[i].set(ratio)
+        
+        # Set binary dropdown
+        if binary_fluor_idx is not None and hasattr(self, 'binary_fluor_var'):
+            fluor_names = self.get_fluorophore_names()
+            if binary_fluor_idx < len(fluor_names):
+                self.binary_fluor_var.set(fluor_names[binary_fluor_idx])
         
         # Update other properties
         self.obj_kind.set(str(obj.get('kind', 'gaussian_blobs')))
         self.obj_count.set(int(obj.get('count', 50)))
         
-        # Initialize lambda from count
-        H, W = self.get_image_dims()
-        area = H * W
-        if area > 0:
-            lambda_val = self.obj_count.get() / area
-            self.obj_lambda.set(lambda_val)
-            self.count_display_label.config(text=f"→ λ = {lambda_val:.6f} obj/px²")
-            self.lambda_display_label.config(text=f"→ n ≈ {self.obj_count.get()} objects")
+        # Update radius (and auto-sync sigma)
+        radius = obj.get('radius', obj.get('spot_sigma', 2.0) * 2.0)
+        self.obj_radius.set(float(radius))
         
-        self.obj_size.set(float(obj.get('size_px', 6.0)))
         self.obj_i_min.set(float(obj.get('intensity_min', 0.5)))
         self.obj_i_max.set(float(obj.get('intensity_max', 1.5)))
-        self.obj_sigma.set(float(obj.get('spot_sigma', 2.0)))
+        
+        # Update region
         region = obj.get('region', {'type': 'full'})
         rtype = region.get('type', 'full')
         self.obj_region_type.set(rtype)
@@ -219,177 +327,84 @@ class ObjectLayersManager:
         self.obj_cx.set(float(region.get('cx', 64)))
         self.obj_cy.set(float(region.get('cy', 64)))
         self.obj_r.set(float(region.get('r', 40)))
-        
-        # Update the region UI to show correct parameters
-        ObjectLayersUI.update_region_ui(self)
-        
-        # Update kind-specific UI elements
-        self._on_kind_change()
-
-    def _auto_save(self) -> None:
-        """Automatically save changes to the selected object."""
-        sel = self.obj_tree.selection()
-        if not sel:
-            return
-        idx = self.obj_tree.index(sel[0])
-        if not (0 <= idx < len(self.objects)):
-            return
-        
-        try:
-            region_type = self.obj_region_type.get()
-            region = {'type': region_type}
-            if region_type == 'rect':
-                region.update({'x0': self.obj_x0.get(), 'y0': self.obj_y0.get(), 
-                              'w': self.obj_w.get(), 'h': self.obj_h.get()})
-            elif region_type == 'circle':
-                region.update({'cx': self.obj_cx.get(), 'cy': self.obj_cy.get(), 
-                              'r': self.obj_r.get()})
-            
-            # Handle composition mode
-            if self.composition_mode.get() == "template":
-                template_name = self.composition_template.get()
-                obj_spec = {
-                    'template_name': template_name,
-                    'kind': self.obj_kind.get(),
-                    'region': region,
-                    'count': int(self.obj_count.get()),
-                    'size_px': float(self.obj_size.get()),
-                    'intensity_min': float(self.obj_i_min.get()),
-                    'intensity_max': float(self.obj_i_max.get()),
-                    'spot_sigma': float(self.obj_sigma.get()),
-                }
-                self.objects[idx] = obj_spec
-            else:
-                # Single fluorophore mode
-                fluor_name = self.obj_fluor.get()
-                fluor_index = self._fluorophore_name_to_index(fluor_name)
-                
-                obj_spec = {
-                    'fluor_index': fluor_index,
-                    'kind': self.obj_kind.get(),
-                    'region': region,
-                    'count': int(self.obj_count.get()),
-                    'size_px': float(self.obj_size.get()),
-                    'intensity_min': float(self.obj_i_min.get()),
-                    'intensity_max': float(self.obj_i_max.get()),
-                    'spot_sigma': float(self.obj_sigma.get()),
-                }
-                self.objects[idx] = obj_spec
-            self._refresh_object_list()
-            
-            # Re-select the updated item
-            items = self.obj_tree.get_children()
-            if idx < len(items):
-                self.obj_tree.selection_set(items[idx])
-            
-        except Exception:
-            pass  # Silently fail on invalid input during typing
     
-    # ===== Event Handlers =====
-    
-    def _on_count_changed(self) -> None:
-        """Handle count field change - update lambda."""
-        if self.count_lambda_sync_lock:
-            return
-        self.count_lambda_sync_lock = True
+    def _on_mode_change(self, trigger_save=True) -> None:
+        """Handle per-object mode change - rebuild composition UI.
         
-        try:
-            H, W = self.get_image_dims()
-            area = H * W
-            count = self.obj_count.get()
-            lambda_val = count / area if area > 0 else 0.0
-            
-            self.obj_lambda.set(lambda_val)
-            self.count_display_label.config(text=f"→ λ = {lambda_val:.6f} obj/px²")
-        except:
-            pass
-        finally:
-            self.count_lambda_sync_lock = False
-            self._auto_save()
-    
-    def _on_lambda_changed(self) -> None:
-        """Handle lambda field change - update count."""
-        if self.count_lambda_sync_lock:
-            return
-        self.count_lambda_sync_lock = True
+        Args:
+            trigger_save: Whether to trigger auto_save after rebuilding UI
+        """
+        # Clear composition editor frame
+        if hasattr(self, 'comp_editor_frame'):
+            for widget in self.comp_editor_frame.winfo_children():
+                widget.destroy()
         
-        try:
-            H, W = self.get_image_dims()
-            area = H * W
-            lambda_val = self.obj_lambda.get()
-            count = int(round(lambda_val * area))
-            
-            self.obj_count.set(count)
-            self.lambda_display_label.config(text=f"→ n ≈ {count} objects")
-        except:
-            pass
-        finally:
-            self.count_lambda_sync_lock = False
-            self._auto_save()
-    
-    def _on_kind_change(self, event=None) -> None:
-        """Handle object kind change to show/hide relevant parameters."""
-        kind = self.obj_kind.get()
+        mode = self.obj_mode.get()
         
-        # Show/hide parameters based on object kind
-        if kind in ("gaussian_blobs", "dots"):
-            # Gaussian blobs and dots: ONLY use spot_sigma (size_px is ignored in code!)
-            self.size_label.grid_remove()
-            self.size_entry.grid_remove()
-            
-            # Show sigma controls
-            self.sigma_label.grid(row=6, column=0, sticky='w', pady=(6,0))
-            self.sigma_entry.grid(row=6, column=1, columnspan=3, sticky='w', pady=(6,0))
-        else:
-            # Circles and boxes: use size_px for radius/dimensions, no sigma
-            self.size_label.grid(row=4, column=0, sticky='w', padx=(0,4), pady=(6,0))
-            self.size_entry.grid(row=4, column=1, sticky='w', pady=(6,0))
-            self.sigma_label.grid_remove()
-            self.sigma_entry.grid_remove()
-    
-    def _on_composition_mode_change(self) -> None:
-        """Handle composition mode change between single/template."""
-        mode = self.composition_mode.get()
-        
-        # Hide both frames
-        self.single_fluor_frame.pack_forget()
-        self.template_frame.pack_forget()
-        
-        # Show appropriate frame
         if mode == "single":
-            self.single_fluor_frame.pack(fill=tk.X)
-        else:  # template
-            self.template_frame.pack(fill=tk.X)
-            # Refresh template list
-            self.template_combo.config(values=self.template_manager.get_template_names())
-    
-    def _on_region_type_change(self, event=None) -> None:
-        """Handle region type change."""
-        # Update UI to show only relevant parameters
-        ObjectLayersUI.update_region_ui(self)
+            # Show simple fluorophore dropdown
+            self._build_single_fluor_selector()
+        else:
+            # Show multi-fluorophore composition editor
+            self.composition_editor.build(self.comp_editor_frame)
         
-        # Visual feedback when changing region type
-        region_type = self.obj_region_type.get()
-        if region_type == "full":
-            self.log("Region set to full image")
-        elif region_type == "rect":
-            self.log("Region set to rectangle - configure x0, y0, width, height")
-        elif region_type == "circle":
-            self.log("Region set to circle - configure center and radius")
+        # Trigger save to update object (only if requested)
+        if trigger_save:
+            self.object_editor.auto_save()
     
-    def _open_template_manager(self) -> None:
-        """Open template manager dialog."""
-        dialog = TemplateEditorDialog(
-            self.parent_frame,
-            self.template_manager,
-            self._fluorophore_index_to_name,
-            self._fluorophore_name_to_index,
-            self._get_fluorophore_list,
-            self.log
-        )
-        dialog.show()
+    def _build_single_fluor_selector(self) -> None:
+        """Build simple fluorophore dropdown for single-fluorophore mode."""
+        if not hasattr(self, 'comp_editor_frame'):
+            return
+        
+        fluor_names = self.get_fluorophore_names()
+        if not fluor_names:
+            ttk.Label(self.comp_editor_frame, text="No fluorophores loaded").pack(padx=4, pady=4)
+            return
+        
+        frame = ttk.Frame(self.comp_editor_frame)
+        frame.pack(fill=tk.X, padx=4, pady=4)
+        
+        ttk.Label(frame, text="Fluorophore:", width=10).pack(side=tk.LEFT)
+        
+        # Get current single fluorophore (if any)
+        sel = self.obj_tree.selection()
+        current_fluor = "F1"
+        if sel:
+            idx = self.obj_tree.index(sel[0])
+            if 0 <= idx < len(self.objects):
+                obj = self.objects[idx]
+                comp = obj.get('composition', [])
+                if comp and len(comp) == 1:
+                    fluor_idx = comp[0].get('fluor_index', 0)
+                    if fluor_idx < len(fluor_names):
+                        current_fluor = fluor_names[fluor_idx]
+        
+        self.obj_fluor.set(current_fluor)
+        
+        fluor_combo = ttk.Combobox(frame, textvariable=self.obj_fluor, 
+                                   values=fluor_names, state='readonly', width=15)
+        fluor_combo.pack(side=tk.LEFT, padx=4)
+        fluor_combo.bind('<<ComboboxSelected>>', lambda e: self._on_single_fluor_change())
     
-    # ===== Preset Generation =====
+    def _on_single_fluor_change(self) -> None:
+        """Handle single fluorophore selection change."""
+        from .utils import fluorophore_name_to_index, get_fluorophore_list
+        
+        fluor_list = get_fluorophore_list(self.get_fluorophore_names)
+        fluor_name = self.obj_fluor.get()
+        fluor_idx = fluorophore_name_to_index(fluor_name, fluor_list)
+        
+        # Update composition to single fluorophore
+        sel = self.obj_tree.selection()
+        if sel:
+            idx = self.obj_tree.index(sel[0])
+            if 0 <= idx < len(self.objects):
+                self.objects[idx]['composition'] = [{'fluor_index': fluor_idx, 'ratio': 1.0}]
+                self.objects[idx]['binary_fluor'] = None
+                self._update_tree_item(idx)
+    
+    # ===== Preset/Quick-Assign Methods =====
     
     def _add_preset_objects(self) -> None:
         """Add 3 preset objects, one for each default fluorophore."""
@@ -409,8 +424,8 @@ class ObjectLayersManager:
             self.obj_tree.selection_set(items[0])
             self._on_object_select()
     
-    def _quick_assign_sample(self) -> None:
-        """Generate a sample dataset with all available fluorophores."""
+    def _quick_assign_single(self) -> None:
+        """Generate single-fluorophore objects (one per fluorophore)."""
         # Get image dimensions
         try:
             img_h, img_w = self.get_image_dims()
@@ -424,14 +439,69 @@ class ObjectLayersManager:
             messagebox.showwarning("No Fluorophores", "Please add fluorophores first!")
             return
         
+        num_fluors = len(fluorophore_names)
+        
         # Generate objects using PresetGenerator
-        objects, log_msg = PresetGenerator.generate_quick_assign_sample(
-            img_h, img_w, fluorophore_names
+        objects, log_msg = PresetGenerator.quick_assign_single_fluorophore(
+            num_fluors=num_fluors,
+            img_h=img_h,
+            img_w=img_w
         )
         
         # Clear existing objects and add new ones
         self.objects.clear()
         self.objects.extend(objects)
+        
+        # Update next object number
+        if objects:
+            max_num = max(int(obj['name'][1:]) for obj in objects if obj.get('name', '').startswith('O'))
+            self.next_object_number = max_num + 1
+        
+        # Refresh the list
+        self._refresh_object_list()
+        
+        # Log summary
+        for line in log_msg.split('\n'):
+            self.log(line)
+    
+    def _quick_assign_multi(self) -> None:
+        """Generate multi-fluorophore objects (one per binary fluorophore)."""
+        # Get image dimensions
+        try:
+            img_h, img_w = self.get_image_dims()
+        except:
+            self.log("Cannot determine image size. Using default 128x128.")
+            img_h, img_w = 128, 128
+        
+        # Get available fluorophores
+        fluorophore_names = self.get_fluorophore_names()
+        if not fluorophore_names:
+            messagebox.showwarning("No Fluorophores", "Please add fluorophores first!")
+            return
+        
+        num_fluors = len(fluorophore_names)
+        
+        # Compute binary indices (all fluorophores NOT in continuous list)
+        binary_indices = [i for i in range(num_fluors) if i not in self.continuous_fluor_indices]
+        
+        # Generate objects using PresetGenerator (new multi-fluorophore method)
+        objects, log_msg = PresetGenerator.quick_assign_multi_fluorophore(
+            num_fluors=num_fluors,
+            continuous_indices=self.continuous_fluor_indices,
+            binary_indices=binary_indices,
+            use_dirichlet=self.use_dirichlet.get(),
+            img_h=img_h,
+            img_w=img_w
+        )
+        
+        # Clear existing objects and add new ones
+        self.objects.clear()
+        self.objects.extend(objects)
+        
+        # Update next object number
+        if objects:
+            max_num = max(int(obj['name'][1:]) for obj in objects if obj.get('name', '').startswith('O'))
+            self.next_object_number = max_num + 1
         
         # Refresh the list
         self._refresh_object_list()
@@ -443,59 +513,71 @@ class ObjectLayersManager:
     # ===== Public API =====
     
     def get_objects(self) -> List[Dict[str, Any]]:
-        """Get list of object specifications with composition support."""
-        # Convert objects to include composition if using templates
+        """Get list of object specifications."""
         converted_objects = []
         for obj in self.objects:
-            obj_copy = obj.copy()
+            obj_copy = copy.deepcopy(obj)
             
-            # If object has a template_name, convert to composition format
-            if 'template_name' in obj_copy:
-                template = self.template_manager.get_template(obj_copy['template_name'])
-                if template:
-                    obj_copy['composition'] = template.get_composition_for_object()
-                    # Remove fluor_index since we're using composition
-                    obj_copy.pop('fluor_index', None)
-                obj_copy.pop('template_name', None)  # Remove template_name before passing to spatial
+            # Ensure spot_sigma is set (derive from radius if needed)
+            if 'radius' in obj_copy and 'spot_sigma' not in obj_copy:
+                obj_copy['spot_sigma'] = obj_copy['radius'] / 2.0
             
             converted_objects.append(obj_copy)
         
         return converted_objects
-        
+
     def should_include_base_field(self) -> bool:
-        """Check if base field should be included."""
+        """Check if base field should be included in generation."""
         return self.include_base_field.get()
     
-    # ===== Helper Methods =====
-    
-    def _get_fluorophore_list(self) -> List[str]:
-        """Get list of available fluorophore names."""
-        try:
-            fluor_names = self.get_fluorophore_names()
-            return fluor_names if fluor_names else ["F1", "F2", "F3"]
-        except:
-            return ["F1", "F2", "F3"]
-    
-    def _fluorophore_name_to_index(self, name: str) -> int:
-        """Convert fluorophore name to 0-indexed integer by looking up in fluorophore list."""
-        try:
-            fluor_names = self._get_fluorophore_list()
-            if name in fluor_names:
-                return fluor_names.index(name)
-            # Fallback: try to extract number from "FX" format
-            if name.startswith('F') and name[1:].isdigit():
-                return int(name[1:]) - 1
-            return 0
-        except (ValueError, IndexError):
-            return 0
-    
-    def _fluorophore_index_to_name(self, index: int) -> str:
-        """Convert 0-indexed integer to fluorophore name by looking up in fluorophore list."""
-        try:
-            fluor_names = self._get_fluorophore_list()
-            if 0 <= index < len(fluor_names):
-                return fluor_names[index]
-            return f"F{index+1}"  # Fallback
-        except:
-            return f"F{index+1}"
+    def _open_fluorophore_config(self):
+        """Open dialog to configure continuous vs binary fluorophore roles."""
+        dialog = tk.Toplevel(self.parent_frame)
+        dialog.title("Configure Fluorophore Roles")
+        dialog.geometry("400x300")
+        
+        # Get available fluorophores
+        fluor_names = self.get_fluorophore_names()
+        if not fluor_names:
+            ttk.Label(dialog, text="No fluorophores loaded").pack(pady=20)
+            ttk.Button(dialog, text="Close", command=dialog.destroy).pack()
+            return
+        
+        # Instructions
+        ttk.Label(dialog, text="Select continuous (ratio) fluorophores:", 
+                 font=('TkDefaultFont', 10, 'bold')).pack(pady=(10, 5))
+        ttk.Label(dialog, text="Unselected fluorophores will be binary (one-of).", 
+                 foreground='gray').pack(pady=(0, 10))
+        
+        # Checkboxes for each fluorophore
+        continuous_vars = []
+        checkbox_frame = ttk.Frame(dialog)
+        checkbox_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        for i, fluor_name in enumerate(fluor_names):
+            var = tk.BooleanVar(value=(i in self.continuous_fluor_indices))
+            continuous_vars.append(var)
+            ttk.Checkbutton(checkbox_frame, text=fluor_name, variable=var).pack(anchor='w', pady=2)
+        
+        # Buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill=tk.X, padx=20, pady=10)
+        
+        def save_config():
+            continuous_indices = [i for i, var in enumerate(continuous_vars) if var.get()]
+            self.continuous_fluor_indices = continuous_indices if continuous_indices else [0]
+            self.num_continuous_fluors.set(len(self.continuous_fluor_indices))
+            
+            # Update label
+            if hasattr(self, 'fluor_config_label'):
+                cont_names = [fluor_names[i] for i in self.continuous_fluor_indices if i < len(fluor_names)]
+                binary_count = len(fluor_names) - len(self.continuous_fluor_indices)
+                self.fluor_config_label.config(
+                    text=f"{','.join(cont_names[:2])}{'...' if len(cont_names)>2 else ''} (ratio) | {binary_count} binary"
+                )
+            
+            dialog.destroy()
+        
+        ttk.Button(button_frame, text="Save", command=save_config).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=dialog.destroy).pack(side=tk.LEFT, padx=5)
 

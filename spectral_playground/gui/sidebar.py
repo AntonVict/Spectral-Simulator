@@ -93,7 +93,7 @@ class Sidebar(ttk.Frame):
         self.panels['dimensions'] = ImageDimensionsPanel(dims_group)
         row += 1
 
-        objects_group = ttk.LabelFrame(self._settings_frame, text='Object Layers')
+        objects_group = ttk.LabelFrame(self._settings_frame, text='Objects')
         objects_group.grid(row=row, column=0, sticky='ew', padx=2, pady=2)
         objects_group.columnconfigure(0, weight=1)
         self.object_manager = ObjectLayersManager(objects_group, log_callback, self._get_image_dims, self._get_fluorophore_names)

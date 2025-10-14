@@ -71,12 +71,24 @@ def generate_dataset(
             track_objects=True,
             use_ppp=False  # Can be configured later via GUI
         )
-        # Extract legacy object metadata from geometric scene for backward compatibility
+        # Extract object metadata from geometric scene
         generated_objects = []
         if geometric_scene and len(geometric_scene.objects) > 0:
+            # Direct lookup using source_spec_index (O(N) complexity)
             for geo_obj in geometric_scene.objects:
+                # Get source spec directly by index
+                if 0 <= geo_obj.source_spec_index < len(obj_list):
+                    source_spec = obj_list[geo_obj.source_spec_index]
+                    obj_name = source_spec.get('name', 'Unknown')
+                    binary_fluor = source_spec.get('binary_fluor')
+                else:
+                    obj_name = 'Unknown'
+                    binary_fluor = None
+                
                 generated_objects.append({
                     'id': geo_obj.id,
+                    'object_name': obj_name,
+                    'binary_fluor': binary_fluor,
                     'position': geo_obj.position,
                     'type': geo_obj.type,
                     'radius': geo_obj.radius,

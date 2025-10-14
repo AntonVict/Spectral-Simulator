@@ -7,6 +7,8 @@ import tkinter as tk
 from tkinter import ttk
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from ..state import PlaygroundState
 
@@ -77,9 +79,21 @@ class AbundancePanel(ttk.Frame):
         abundance = data.A[idx].reshape(H, W)
         im = ax.imshow(abundance, cmap='magma')
         
-        # Use actual fluorophore name instead of F{idx+1}
+        # Simple title without object overlays (too slow for large datasets)
         fluor_name = self._fluorophore_names[idx] if idx < len(self._fluorophore_names) else f'F{idx + 1}'
-        ax.set_title(f'Fluorophore {fluor_name}', fontsize=10)
+        
+        # Show object count in title if available
+        objects = data.metadata.get('objects', [])
+        if objects:
+            # Fast count using list comprehension (no drawing)
+            count = sum(1 for obj in objects if any(c['fluor_index'] == idx for c in obj.get('composition', [])))
+            if count > 0:
+                ax.set_title(f'{fluor_name} Abundance ({count} objects)', fontsize=10)
+            else:
+                ax.set_title(f'Fluorophore {fluor_name}', fontsize=10)
+        else:
+            ax.set_title(f'Fluorophore {fluor_name}', fontsize=10)
+        
         ax.axis('off')
         self.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         self.canvas.draw_idle()

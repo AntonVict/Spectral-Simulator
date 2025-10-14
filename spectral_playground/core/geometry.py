@@ -26,6 +26,7 @@ class GeometricObject:
         spot_sigma: Sigma parameter for Gaussian rendering
         base_intensity: Base amplitude/intensity of the object
         size_px: Original size parameter in pixels
+        source_spec_index: Index of the source object specification (for lookup)
     """
     id: int
     position: Tuple[float, float]
@@ -35,6 +36,7 @@ class GeometricObject:
     spot_sigma: float = 2.0
     base_intensity: float = 1.0
     size_px: float = 3.0
+    source_spec_index: int = -1
 
 
 class GeometricScene:

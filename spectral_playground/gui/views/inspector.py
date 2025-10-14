@@ -32,6 +32,8 @@ class ObjectInspectorView(ttk.Frame):
         # Filter state
         self.filter_fluor = tk.StringVar(value="All")
         self.filter_type = tk.StringVar(value="All")
+        self.filter_object = tk.StringVar(value="All")  # NEW: Filter by object name
+        self.filter_binary = tk.StringVar(value="All")  # NEW: Filter by binary fluorophore
         self.filter_intensity_min = tk.DoubleVar(value=0.0)
         self.filter_intensity_max = tk.DoubleVar(value=10.0)
         self.search_var = tk.StringVar()
@@ -98,22 +100,24 @@ class ObjectInspectorView(ttk.Frame):
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
         
-        # Treeview with multiple columns
-        columns = ('id', 'fluor', 'type', 'position', 'intensity')
+        # Treeview with multiple columns (updated for multi-fluorophore objects)
+        columns = ('id', 'object_name', 'composition', 'type', 'position', 'radius')
         self.tree = ttk.Treeview(table_frame, columns=columns, show='headings', selectmode='extended')
         
         # Configure columns
         self.tree.heading('id', text='ID', command=lambda: self._sort_by('id'))
-        self.tree.heading('fluor', text='Fluorophore', command=lambda: self._sort_by('fluor'))
+        self.tree.heading('object_name', text='Object', command=lambda: self._sort_by('object_name'))
+        self.tree.heading('composition', text='Composition', command=lambda: self._sort_by('composition'))
         self.tree.heading('type', text='Type', command=lambda: self._sort_by('type'))
         self.tree.heading('position', text='Position (y,x)', command=lambda: self._sort_by('position'))
-        self.tree.heading('intensity', text='Intensity', command=lambda: self._sort_by('intensity'))
+        self.tree.heading('radius', text='Radius', command=lambda: self._sort_by('radius'))
         
         self.tree.column('id', width=50, stretch=False)
-        self.tree.column('fluor', width=100, stretch=True)
-        self.tree.column('type', width=100, stretch=False)
+        self.tree.column('object_name', width=80, stretch=False)
+        self.tree.column('composition', width=120, stretch=True)
+        self.tree.column('type', width=80, stretch=False)
         self.tree.column('position', width=100, stretch=False)
-        self.tree.column('intensity', width=80, stretch=False)
+        self.tree.column('radius', width=70, stretch=False)
         
         self.tree.grid(row=0, column=0, sticky='nsew')
         
@@ -143,7 +147,7 @@ class ObjectInspectorView(ttk.Frame):
         self.fluor_combo.grid(row=0, column=4, sticky='ew', padx=2, pady=2)
         self.fluor_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
-        # Row 1: Type filter
+        # Row 1: Type filter and Object name filter
         ttk.Label(parent, text="Type:").grid(row=1, column=0, sticky='w', padx=2, pady=2)
         type_combo = ttk.Combobox(parent, textvariable=self.filter_type, 
                                   values=["All", "dots", "gaussian_blobs", "circles", "boxes"],
@@ -151,8 +155,20 @@ class ObjectInspectorView(ttk.Frame):
         type_combo.grid(row=1, column=1, sticky='ew', padx=2, pady=2)
         type_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
-        # Row 1: Intensity range
-        ttk.Label(parent, text="Intensity:").grid(row=1, column=2, sticky='w', padx=(10,2), pady=2)
+        # Row 1: Object name filter
+        ttk.Label(parent, text="Object:").grid(row=1, column=2, sticky='w', padx=(10,2), pady=2)
+        self.object_combo = ttk.Combobox(parent, textvariable=self.filter_object, state='readonly', width=10)
+        self.object_combo.grid(row=1, column=3, sticky='ew', padx=2, pady=2)
+        self.object_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
+        
+        # Row 1: Binary fluorophore filter
+        ttk.Label(parent, text="Binary:").grid(row=1, column=4, sticky='w', padx=(10,2), pady=2)
+        self.binary_combo = ttk.Combobox(parent, textvariable=self.filter_binary, state='readonly', width=10)
+        self.binary_combo.grid(row=1, column=5, sticky='ew', padx=2, pady=2)
+        self.binary_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
+        
+        # Row 2: Intensity range
+        ttk.Label(parent, text="Intensity:").grid(row=2, column=0, sticky='w', padx=2, pady=2)
         intensity_frame = ttk.Frame(parent)
         intensity_frame.grid(row=1, column=3, columnspan=2, sticky='ew', padx=2, pady=2)
         ttk.Entry(intensity_frame, textvariable=self.filter_intensity_min, width=6).pack(side=tk.LEFT)
@@ -219,9 +235,20 @@ class ObjectInspectorView(ttk.Frame):
         # Convert to DataFrame - pandas handles list of dicts naturally
         self.df = pd.DataFrame(objects_list)
         
-        # Update fluorophore filter options
+        # Update filter options
         fluor_names = self.get_fluorophore_names()
         self.fluor_combo.config(values=["All"] + fluor_names)
+        
+        # Update object name filter options
+        if 'object_name' in self.df.columns:
+            object_names = sorted(self.df['object_name'].unique())
+            self.object_combo.config(values=["All"] + list(object_names))
+        
+        # Update binary fluorophore filter options
+        if 'binary_fluor' in self.df.columns:
+            binary_indices = self.df['binary_fluor'].dropna().unique()
+            binary_names = [fluor_names[int(idx)] for idx in binary_indices if idx < len(fluor_names)]
+            self.binary_combo.config(values=["All"] + sorted(binary_names))
         
         # Apply current filters
         self._apply_filters()
@@ -268,14 +295,30 @@ class ObjectInspectorView(ttk.Frame):
             except (ValueError, KeyError):
                 pass  # Invalid fluorophore, skip filter
         
-        # Filter 5: Text search
+        # Filter 5: Object name filter
+        object_filter = self.filter_object.get()
+        if object_filter != "All" and 'object_name' in filtered.columns:
+            filtered = filtered[filtered['object_name'] == object_filter]
+        
+        # Filter 6: Binary fluorophore filter
+        binary_filter = self.filter_binary.get()
+        if binary_filter != "All" and 'binary_fluor' in filtered.columns:
+            fluor_names = self.get_fluorophore_names()
+            try:
+                binary_idx = fluor_names.index(binary_filter)
+                filtered = filtered[filtered['binary_fluor'] == binary_idx]
+            except (ValueError, KeyError):
+                pass  # Invalid fluorophore, skip filter
+        
+        # Filter 7: Text search
         search_text = self.search_var.get().lower()
         if search_text:
-            # Search in ID and position columns
+            # Search in ID, object name, and position columns
             def matches_search(row):
                 id_str = str(row['id']).lower()
                 pos_str = str(row['position']).lower()
-                return search_text in id_str or search_text in pos_str
+                obj_name = str(row.get('object_name', '')).lower()
+                return search_text in id_str or search_text in pos_str or search_text in obj_name
             
             filtered = filtered[filtered.apply(matches_search, axis=1)]
         
@@ -299,23 +342,29 @@ class ObjectInspectorView(ttk.Frame):
         for idx, row in self.filtered_df.iterrows():
             obj_id = row['id']
             
-            # Get fluorophore composition string
-            comp = row['composition']
-            if len(comp) == 1:
-                fluor_str = fluor_names[comp[0]['fluor_index']] if comp[0]['fluor_index'] < len(fluor_names) else f"F{comp[0]['fluor_index']+1}"
-            else:
-                fluor_parts = []
-                for c in comp:
-                    fname = fluor_names[c['fluor_index']] if c['fluor_index'] < len(fluor_names) else f"F{c['fluor_index']+1}"
-                    fluor_parts.append(f"{fname}({c['ratio']:.0%})")
-                fluor_str = "+".join(fluor_parts)
+            # Object name
+            obj_name = row.get('object_name', 'Unknown')
+            
+            # Get composition string (binary first, then continuous)
+            from spectral_playground.gui.objects.composition import CompositionGenerator
+            comp_display = CompositionGenerator.composition_to_display(
+                row['composition'],
+                row.get('binary_fluor')
+            )
             
             obj_type = row['type']
             pos = row['position']
             pos_str = f"({pos[0]:.1f}, {pos[1]:.1f})"
-            intensity = row['base_intensity']
+            radius = row.get('radius', row.get('spot_sigma', 0) * 2.0)
             
-            self.tree.insert('', 'end', iid=str(obj_id), values=(obj_id, fluor_str, obj_type, pos_str, f"{intensity:.3f}"))
+            self.tree.insert('', 'end', iid=str(obj_id), values=(
+                obj_id, 
+                obj_name, 
+                comp_display, 
+                obj_type, 
+                pos_str, 
+                f"{radius:.1f}px"
+            ))
     
     def _update_stats(self):
         """Update statistics label."""

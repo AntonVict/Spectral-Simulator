@@ -154,35 +154,33 @@ class QuickInspectorPanel(ttk.Frame):
                                            "or use the Full Inspector to select objects.")
             return
         
-        fluor_names = self.get_fluorophore_names()
-        
-        # Header
-        self.object_text.insert('1.0', f"{'ID':<6} {'Type':<14} {'Pos(y,x)':<14} {'Int':<8} {'Fluor'}\n")
-        self.object_text.insert(tk.END, "-" * 70 + "\n")
+        # Header - updated to show Object name, Composition, Radius
+        self.object_text.insert('1.0', f"{'ID':<6} {'Object':<10} {'Composition':<18} {'Type':<14} {'Radius':<10} {'Pos(y,x)'}\n")
+        self.object_text.insert(tk.END, "-" * 80 + "\n")
         
         # Get selected object details
         selected_objs = [obj for obj in self.all_objects 
                         if obj['id'] in self.selected_object_ids]
         
+        from spectral_playground.gui.objects.composition import CompositionGenerator
+        
         for obj in selected_objs:
             obj_id = obj['id']
-            obj_type = obj.get('type', 'unknown')[:12]
+            obj_name = obj.get('object_name', 'Unknown')[:9]
+            
+            # Get composition string (binary first, then continuous)
+            comp_display = CompositionGenerator.composition_to_display(
+                obj.get('composition', []),
+                obj.get('binary_fluor')
+            )[:17]  # Truncate to fit column
+            
+            obj_type = obj.get('type', 'unknown')[:13]
+            radius = obj.get('radius', obj.get('spot_sigma', 0) * 2.0)
+            radius_str = f"{radius:.1f}px"
             pos = obj.get('position', (0, 0))
             pos_str = f"({pos[0]:.1f},{pos[1]:.1f})"
-            intensity = obj.get('base_intensity', 0.0)
             
-            # Format composition
-            comp = obj.get('composition', [])
-            if len(comp) == 1:
-                fluor_str = fluor_names[comp[0]['fluor_index']] if comp[0]['fluor_index'] < len(fluor_names) else f"F{comp[0]['fluor_index']+1}"
-            else:
-                parts = []
-                for c in comp:
-                    fname = fluor_names[c['fluor_index']] if c['fluor_index'] < len(fluor_names) else f"F{c['fluor_index']+1}"
-                    parts.append(f"{fname}({c['ratio']:.0%})")
-                fluor_str = "+".join(parts)
-            
-            line = f"{obj_id:<6} {obj_type:<14} {pos_str:<14} {intensity:<8.3f} {fluor_str}\n"
+            line = f"{obj_id:<6} {obj_name:<10} {comp_display:<18} {obj_type:<14} {radius_str:<10} {pos_str}\n"
             self.object_text.insert(tk.END, line)
     
     def _update_mini_view(self):

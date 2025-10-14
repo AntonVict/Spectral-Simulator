@@ -323,7 +323,7 @@ class AbundanceField:
                     'ratio_noise': 0.0
                 }]
         
-        for obj_spec in (objects or []):
+        for spec_index, obj_spec in enumerate(objects or []):
             composition = get_composition(obj_spec)
             
             # Validate fluorophore indices
@@ -419,7 +419,8 @@ class AbundanceField:
                         type=kind,
                         spot_sigma=float(spot_sigma),
                         base_intensity=float(base_amp),
-                        size_px=float(size_px)
+                        size_px=float(size_px),
+                        source_spec_index=spec_index
                     )
                     geometric_objects.append(geometric_obj)
                     
