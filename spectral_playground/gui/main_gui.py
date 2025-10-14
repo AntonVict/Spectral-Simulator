@@ -18,7 +18,7 @@ from .data_manager import (
 from .sidebar import Sidebar
 from .state import PlaygroundState
 from .viewer import ViewerPanel
-from .views.statistics_view import StatisticsView
+from .views.statistics import StatisticsView
 
 
 class PlaygroundGUI(tk.Tk):

@@ -199,9 +199,8 @@ class CompositeView:
         except:
             pass
         
-        # Redraw object overlay if enabled
-        if self.object_overlay.show_objects.get():
-            self._draw_object_overlay_fast()
+        # Sync object overlay state
+        self._sync_object_overlay(force_redraw=True)
 
         self.canvas.draw_idle()
 
@@ -219,9 +218,8 @@ class CompositeView:
             self._full_redraw(data, channel_tuple)
             return
         
-        # Redraw object overlay if enabled
-        if self.object_overlay.show_objects.get():
-            self._update_object_overlay_fast()
+        # Sync object overlay state (no force redraw for RGB-only updates)
+        self._sync_object_overlay()
         
         self.canvas.draw_idle()
 
@@ -346,15 +344,14 @@ class CompositeView:
         
         # Check if we should handle object selection
         if self.spectral_mode == SpectralMode.NONE:
+            # Only handle object clicks if overlay is enabled
+            if not self.object_overlay.show_objects.get():
+                return
+            
             axes = self.figure.get_axes()
             if not axes:
                 return
             ax = axes[0]
-            
-            # Auto-enable object overlay if user clicks and it's disabled
-            if not self.object_overlay.show_objects.get():
-                self.object_overlay.show_objects.set(True)
-                self._toggle_object_overlay()
             
             nearest_id = self.object_overlay.find_nearest_object(
                 event.xdata, event.ydata, self._current_data, ax, max_distance=10.0
@@ -453,18 +450,16 @@ class CompositeView:
                 self.canvas.draw_idle()
 
     def _on_draw(self, event) -> None:
-        """Handle draw events to detect zoom/pan changes and update object overlay."""
+        """Handle draw events to save zoom/pan state."""
         if self._is_updating:
             return
         
-        # Check if zoom changed and update object overlay if needed
-        if self.object_overlay.show_objects.get():
-            axes = self.figure.get_axes()
-            if axes:
-                ax = axes[0]
-                self.zoom_manager.save_current_limits(ax)
-                # Update object overlay for new view
-                self._update_object_overlay_fast()
+        # Only save zoom state, don't trigger overlay redraws
+        # (overlay updates are handled explicitly by update methods)
+        axes = self.figure.get_axes()
+        if axes:
+            ax = axes[0]
+            self.zoom_manager.save_current_limits(ax)
     
     def _clear_overlays(self) -> None:
         """Clear any drawn overlays on the image without affecting zoom."""
@@ -481,30 +476,58 @@ class CompositeView:
     # Object Overlay Management
     # ------------------------------------------------------------------
     
-    def _toggle_object_overlay(self) -> None:
-        """Toggle object position overlay."""
-        if self.object_overlay.show_objects.get():
-            self._draw_object_overlay_fast()
-        else:
-            self.object_overlay.clear_overlay()
-        self.canvas.draw_idle()
-    
-    def _draw_object_overlay_fast(self) -> None:
-        """Draw object positions using fast PathCollection."""
+    def _sync_object_overlay(self, force_redraw: bool = False) -> None:
+        """Synchronize object overlay state with UI (SINGLE SOURCE OF TRUTH).
+        
+        This is the ONLY method that should manage overlay visibility.
+        All other methods should call this instead of directly manipulating the overlay.
+        
+        Args:
+            force_redraw: If True, force a full redraw even if already showing
+        """
+        should_show = self.object_overlay.show_objects.get()
+        is_showing = (self.object_overlay.object_collection is not None)
+        
         axes = self.figure.get_axes()
         if not axes:
             return
         
-        self.object_overlay.draw_objects(axes[0], self._current_data, self.zoom_manager)
+        ax = axes[0]
+        
+        if should_show and (not is_showing or force_redraw):
+            # Need to show or refresh: draw it
+            self.object_overlay.draw_objects(ax, self._current_data, self.zoom_manager)
+        elif not should_show and is_showing:
+            # Need to hide: clear it
+            self.object_overlay.clear_overlay()
+        # else: state is already correct, do nothing
+    
+    def _toggle_object_overlay(self) -> None:
+        """Toggle object position overlay."""
+        # Just sync state and redraw canvas
+        self._sync_object_overlay()
+        self.canvas.draw_idle()
+    
+    def _draw_object_overlay_fast(self) -> None:
+        """Draw object positions using fast PathCollection (legacy method)."""
+        # Redirect to sync method
+        self._sync_object_overlay(force_redraw=True)
     
     def _update_object_overlay_fast(self) -> None:
-        """Update object overlay without full redraw (for zoom/pan)."""
-        if not self.object_overlay.show_objects.get():
-            return
+        """Update object overlay without full redraw (legacy method)."""
+        # Redirect to sync method
+        self._sync_object_overlay()
+    
+    def enable_object_overlay(self) -> None:
+        """Enable object overlay display (public method for external control).
         
-        axes = self.figure.get_axes()
-        if axes:
-            self.object_overlay.update_objects(axes[0], self._current_data, self.zoom_manager)
+        This can be called by other components (e.g., statistics view, inspector)
+        to ensure the overlay is visible when showing specific objects.
+        """
+        if not self.object_overlay.show_objects.get():
+            self.object_overlay.show_objects.set(True)
+            self._sync_object_overlay()
+            self.canvas.draw_idle()
     
     def _toggle_area_select_mode(self) -> None:
         """Toggle area selection mode for objects."""
@@ -512,9 +535,7 @@ class CompositeView:
         
         if self.object_overlay.area_select_mode:
             # Auto-enable object overlay
-            if not self.object_overlay.show_objects.get():
-                self.object_overlay.show_objects.set(True)
-                self._toggle_object_overlay()
+            self.enable_object_overlay()
             # Deactivate spectral modes
             self._set_spectral_mode(SpectralMode.NONE)
         

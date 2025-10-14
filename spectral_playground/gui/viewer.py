@@ -125,6 +125,10 @@ class ViewerPanel(ttk.Frame):
         Args:
             object_ids: Optional list of object IDs to select when opening
         """
+        # Enable object overlay if opening with specific objects
+        if object_ids is not None and len(object_ids) > 0:
+            self.composite_view.enable_object_overlay()
+        
         if self.inspector_window is not None and self.inspector_window.winfo_exists():
             # Window already open, just raise it and update selection
             self.inspector_window.lift()
