@@ -348,6 +348,225 @@ class GeometricScene:
         
         return A_maps.reshape(K, H * W)
     
+    def compute_overlap_metrics(self) -> Dict[str, Any]:
+        """Compute overlap intensity metrics for pairs that DO overlap.
+        
+        Returns dict with:
+            - overlap_pairs: [(i, j, overlap_depth, coverage_fraction, distance), ...]
+            - per_object_max_depth: [max overlap_depth for each object]
+            - per_object_max_coverage: [max coverage_fraction for each object]
+        
+        Metrics:
+            - overlap_length = (r_i + r_j) - distance  [raw overlap distance in pixels]
+            - overlap_depth = overlap_length / (r_i + r_j)  [0-1, symmetric]
+                * 0 = just touching, 1 = centers coincide
+                * For equal sizes: 0.5 = halfway overlapped
+            - coverage_fraction = min(1.0, overlap_length / min(r_i, r_j))  [0-1, capped]
+                * How many "smaller radii" does overlap span (capped at 1.0)
+                * 1.0 = overlap spans entire smaller radius
+        """
+        n = len(self.objects)
+        overlap_pairs = []
+        per_object_max_depth = np.zeros(n)
+        per_object_max_coverage = np.zeros(n)
+        
+        if n == 0:
+            return {
+                'overlap_pairs': overlap_pairs,
+                'per_object_max_depth': per_object_max_depth,
+                'per_object_max_coverage': per_object_max_coverage
+            }
+        
+        # Get precomputed overlap graph
+        overlap_graph = self.overlap_graph
+        
+        # Vectorized data
+        centers = np.array([obj.position for obj in self.objects])
+        radii = np.array([obj.radius for obj in self.objects])
+        
+        # Track per-object stats
+        object_depths = [[] for _ in range(n)]
+        object_coverages = [[] for _ in range(n)]
+        
+        # Compute metrics for each overlapping pair
+        for i in range(n):
+            neighbors = overlap_graph[i]
+            if not neighbors:
+                continue
+            
+            for j in neighbors:
+                if i >= j:  # Only process each pair once
+                    continue
+                
+                # Compute distance
+                distance = np.linalg.norm(centers[i] - centers[j])
+                r_i, r_j = radii[i], radii[j]
+                r_sum = r_i + r_j
+                
+                # Compute overlap metrics
+                overlap_length = r_sum - distance
+                
+                if overlap_length > 0:  # Should always be true for overlapping pairs
+                    overlap_depth = overlap_length / r_sum
+                    coverage_fraction = min(1.0, overlap_length / min(r_i, r_j))
+                    
+                    # Store pair metrics
+                    overlap_pairs.append((i, j, overlap_depth, coverage_fraction, distance))
+                    
+                    # Track for per-object stats
+                    object_depths[i].append(overlap_depth)
+                    object_depths[j].append(overlap_depth)
+                    object_coverages[i].append(coverage_fraction)
+                    object_coverages[j].append(coverage_fraction)
+        
+        # Compute per-object max values
+        for i in range(n):
+            if object_depths[i]:
+                per_object_max_depth[i] = max(object_depths[i])
+                per_object_max_coverage[i] = max(object_coverages[i])
+        
+        return {
+            'overlap_pairs': overlap_pairs,
+            'per_object_max_depth': per_object_max_depth,
+            'per_object_max_coverage': per_object_max_coverage
+        }
+    
+    def compute_proximity_metrics(self, epsilon: float) -> Dict[str, Any]:
+        """Compute proximity metrics for near-miss objects within gap < epsilon.
+        
+        Args:
+            epsilon: Max gap distance to consider (pixels)
+        
+        Returns dict with:
+            - proximity_pairs: [(i, j, gap_distance, normalized_gap), ...]
+            - per_object_near_count: [num near-neighbors per object]
+        
+        Metrics:
+            - gap_distance = distance - (r_i + r_j)  [0 to epsilon]
+            - normalized_gap = gap / min(r_i, r_j)  [size-independent]
+        """
+        n = len(self.objects)
+        proximity_pairs = []
+        per_object_near_count = np.zeros(n, dtype=int)
+        
+        if n == 0 or epsilon <= 0:
+            return {
+                'proximity_pairs': proximity_pairs,
+                'per_object_near_count': per_object_near_count
+            }
+        
+        # Vectorized data
+        centers = np.array([obj.position for obj in self.objects])
+        radii = np.array([obj.radius for obj in self.objects])
+        max_radius = radii.max()
+        
+        # Use KD-tree for efficient spatial queries
+        tree = self.spatial_index
+        
+        for i in range(n):
+            # Query neighbors within r_i + max_radius + epsilon
+            search_radius = radii[i] + max_radius + epsilon
+            candidates = tree.query_ball_point(centers[i], r=search_radius)
+            
+            if not candidates:
+                continue
+            
+            for j in candidates:
+                if i >= j:  # Only process each pair once
+                    continue
+                
+                # Compute distance and gap
+                distance = np.linalg.norm(centers[i] - centers[j])
+                r_sum = radii[i] + radii[j]
+                gap_distance = distance - r_sum
+                
+                # Check if near-miss (positive gap within epsilon)
+                if 0 < gap_distance < epsilon:
+                    normalized_gap = gap_distance / min(radii[i], radii[j])
+                    proximity_pairs.append((i, j, gap_distance, normalized_gap))
+                    
+                    # Increment counts
+                    per_object_near_count[i] += 1
+                    per_object_near_count[j] += 1
+        
+        return {
+            'proximity_pairs': proximity_pairs,
+            'per_object_near_count': per_object_near_count
+        }
+    
+    def compute_epsilon_neighbor_curves(self, epsilon_values: List[float]) -> Dict[str, Any]:
+        """Compute neighbor counts at multiple epsilon thresholds (stringency analysis).
+        
+        Args:
+            epsilon_values: List of gap thresholds to test
+        
+        Returns dict with:
+            - epsilon_vals: The input epsilon values
+            - mean_neighbors: [mean neighbor count at each epsilon]
+            - median_neighbors: [median at each epsilon]
+            - per_object_counts: [[counts per object] for each epsilon]
+        """
+        n = len(self.objects)
+        
+        if n == 0 or not epsilon_values:
+            return {
+                'epsilon_vals': epsilon_values,
+                'mean_neighbors': [],
+                'median_neighbors': [],
+                'per_object_counts': []
+            }
+        
+        # Vectorized data
+        centers = np.array([obj.position for obj in self.objects])
+        radii = np.array([obj.radius for obj in self.objects])
+        max_radius = radii.max()
+        max_epsilon = max(epsilon_values)
+        
+        # Use KD-tree for efficient spatial queries
+        tree = self.spatial_index
+        
+        # Storage for results
+        mean_neighbors = []
+        median_neighbors = []
+        per_object_counts = []
+        
+        for epsilon in epsilon_values:
+            counts = np.zeros(n, dtype=int)
+            
+            for i in range(n):
+                # Query neighbors within r_i + max_radius + epsilon
+                search_radius = radii[i] + max_radius + epsilon
+                candidates = tree.query_ball_point(centers[i], r=search_radius)
+                
+                if not candidates:
+                    continue
+                
+                for j in candidates:
+                    if i == j:  # Skip self
+                        continue
+                    
+                    # Compute distance and gap
+                    distance = np.linalg.norm(centers[i] - centers[j])
+                    r_sum = radii[i] + radii[j]
+                    gap_distance = distance - r_sum
+                    
+                    # Count if within epsilon threshold
+                    # Include both overlapping (gap < 0) and near-miss (0 <= gap < epsilon)
+                    if gap_distance < epsilon:
+                        counts[i] += 1
+            
+            # Compute statistics for this epsilon
+            mean_neighbors.append(np.mean(counts))
+            median_neighbors.append(np.median(counts))
+            per_object_counts.append(counts.copy())
+        
+        return {
+            'epsilon_vals': epsilon_values,
+            'mean_neighbors': mean_neighbors,
+            'median_neighbors': median_neighbors,
+            'per_object_counts': per_object_counts
+        }
+    
     def __len__(self) -> int:
         """Return number of objects in scene."""
         return len(self.objects)

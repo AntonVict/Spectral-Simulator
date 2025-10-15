@@ -15,7 +15,10 @@ from spectral_playground.core.statistics import (
     CrowdingAnalyzer
 )
 
-from .tabs import OverviewTab, CoverageTab, OverlapTab, ParametricTab
+from .tabs import (
+    OverviewTab, CoverageTab, OverlapTab, ParametricTab,
+    OverlapIntensityTab, ProximityTab
+)
 from .utils import export_results_to_csv
 
 
@@ -27,6 +30,8 @@ class StatisticsView(ttk.Frame):
     - Coverage Analysis: Detailed coverage metrics and theory comparison
     - Overlap Statistics: Distribution analysis and higher-order overlaps
     - Parametric Analysis: Parameter sweeps and sensitivity analysis
+    - Overlap Intensity: Quantify how severe overlaps are
+    - Proximity Analysis: Measure near-miss distances and stringency
     """
     
     def __init__(
@@ -63,12 +68,16 @@ class StatisticsView(ttk.Frame):
         self.coverage_tab = CoverageTab(self.notebook, self)
         self.overlap_tab = OverlapTab(self.notebook, self)
         self.parametric_tab = ParametricTab(self.notebook, self)
+        self.overlap_intensity_tab = OverlapIntensityTab(self.notebook, self)
+        self.proximity_tab = ProximityTab(self.notebook, self)
         
         # Add tabs to notebook
         self.notebook.add(self.overview_tab, text='Overview')
         self.notebook.add(self.coverage_tab, text='Coverage Analysis')
         self.notebook.add(self.overlap_tab, text='Overlap Statistics')
         self.notebook.add(self.parametric_tab, text='Parametric Analysis')
+        self.notebook.add(self.overlap_intensity_tab, text='Overlap Intensity')
+        self.notebook.add(self.proximity_tab, text='Proximity Analysis')
         
         # Initialize policy visibility in overview tab
         self.overview_tab.controls.update_policy_visibility()
@@ -212,6 +221,8 @@ class StatisticsView(ttk.Frame):
             self.overview_tab.update_results(results, theory, params)
             self.coverage_tab.update_results(results, theory, params)
             self.overlap_tab.update_results(results, theory, params)
+            self.overlap_intensity_tab.update_results(results, theory)
+            self.proximity_tab.update_results(results, theory)
             # Parametric tab updates on demand when user clicks compute
             
             self.log(f'Analysis complete: {results["isolated_objects"]} isolated objects found using {active_policy} policy')
