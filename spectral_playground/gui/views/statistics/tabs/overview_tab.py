@@ -138,7 +138,7 @@ class OverviewTab(ttk.Frame):
         
         ttk.Button(
             nav_frame,
-            text='See Overlap Statistics →',
+            text='See Neighbor Analysis →',
             command=lambda: self.stats_view.notebook.select(2)
         ).pack(fill=tk.X, padx=4, pady=2)
         

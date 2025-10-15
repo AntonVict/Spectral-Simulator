@@ -28,6 +28,9 @@ class OverlapIntensityTab(ttk.Frame):
         super().__init__(parent)
         self.stats_view = stats_view
         
+        # Initialize colorbar reference to prevent duplication
+        self._scatter_colorbar = None
+        
         # Configure grid layout: Info Panel | Plots
         self.columnconfigure(0, weight=1, minsize=300)
         self.columnconfigure(1, weight=2, minsize=600)
@@ -395,9 +398,17 @@ class OverlapIntensityTab(ttk.Frame):
             self.ax3.plot(x_ref, y_ref, 'b--', alpha=0.5, linewidth=2, 
                          label='Equal sizes (coverage = 2×depth)')
             
-            # Add colorbar
-            cbar = self.fig3.colorbar(scatter, ax=self.ax3, pad=0.02)
-            cbar.set_label('Overlap Depth', fontsize=8)
+            # Remove old colorbar if it exists to prevent duplication
+            if hasattr(self, '_scatter_colorbar') and self._scatter_colorbar is not None:
+                try:
+                    self._scatter_colorbar.remove()
+                except (AttributeError, KeyError, ValueError):
+                    # Colorbar was already removed or axis state changed
+                    pass
+            
+            # Add new colorbar
+            self._scatter_colorbar = self.fig3.colorbar(scatter, ax=self.ax3, pad=0.02)
+            self._scatter_colorbar.set_label('Overlap Depth', fontsize=8)
             
             self.ax3.set_xlabel('Overlap Depth (%)', fontsize=9)
             self.ax3.set_ylabel('Coverage Fraction (%)', fontsize=9)

@@ -28,7 +28,7 @@ class StatisticsView(ttk.Frame):
     Provides multiple tabs for different aspects of crowding analysis:
     - Overview: Main controls, key metrics, and primary plots
     - Coverage Analysis: Detailed coverage metrics and theory comparison
-    - Overlap Statistics: Distribution analysis and higher-order overlaps
+    - Neighbor Count Analysis: Distribution and spatial crowding patterns
     - Parametric Analysis: Parameter sweeps and sensitivity analysis
     - Overlap Intensity: Quantify how severe overlaps are
     - Proximity Analysis: Measure near-miss distances and stringency
@@ -74,7 +74,7 @@ class StatisticsView(ttk.Frame):
         # Add tabs to notebook
         self.notebook.add(self.overview_tab, text='Overview')
         self.notebook.add(self.coverage_tab, text='Coverage Analysis')
-        self.notebook.add(self.overlap_tab, text='Overlap Statistics')
+        self.notebook.add(self.overlap_tab, text='Neighbor Count Analysis')
         self.notebook.add(self.parametric_tab, text='Parametric Analysis')
         self.notebook.add(self.overlap_intensity_tab, text='Overlap Intensity')
         self.notebook.add(self.proximity_tab, text='Proximity Analysis')

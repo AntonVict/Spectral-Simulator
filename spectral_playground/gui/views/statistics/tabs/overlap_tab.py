@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class OverlapTab(ttk.Frame):
-    """Detailed overlap statistics with distributions and higher-order analysis."""
+    """Neighbor count analysis with distribution and spatial patterns."""
     
     def __init__(self, parent: tk.Widget, stats_view: StatisticsView):
         """Initialize overlap tab.
@@ -26,6 +26,9 @@ class OverlapTab(ttk.Frame):
         """
         super().__init__(parent)
         self.stats_view = stats_view
+        
+        # Initialize colorbar reference to prevent duplication
+        self._heatmap_colorbar = None
         
         # Configure grid layout: Info Panel | Plots
         self.columnconfigure(0, weight=1, minsize=300)
@@ -129,9 +132,9 @@ class OverlapTab(ttk.Frame):
             info_text_frame,
             text='This tab shows the distribution\n'
                  'of neighbor counts across all\n'
-                 'objects. Higher-order overlaps\n'
-                 '(3+ objects) indicate crowded\n'
-                 'regions.',
+                 'objects, plus a spatial heatmap\n'
+                 'revealing where crowding occurs\n'
+                 'in the scene.',
             font=('TkDefaultFont', 8),
             justify=tk.LEFT,
             wraplength=250
@@ -139,7 +142,7 @@ class OverlapTab(ttk.Frame):
     
     def _build_plots(self) -> None:
         """Build plots panel (right column)."""
-        plots_frame = ttk.LabelFrame(self, text='Overlap Distributions')
+        plots_frame = ttk.LabelFrame(self, text='Neighbor Analysis')
         plots_frame.grid(row=0, column=1, sticky='nsew', padx=4, pady=4)
         
         # Create matplotlib figure with 2 subplots
@@ -153,12 +156,12 @@ class OverlapTab(ttk.Frame):
         self.ax_histogram.set_ylabel('Number of Objects')
         self.ax_histogram.grid(True, alpha=0.3, axis='y')
         
-        # Plot 2: Cumulative distribution
-        self.ax_cumulative = self.figure.add_subplot(212)
-        self.ax_cumulative.set_title('Cumulative Distribution')
-        self.ax_cumulative.set_xlabel('Number of Neighbors')
-        self.ax_cumulative.set_ylabel('Cumulative Fraction')
-        self.ax_cumulative.grid(True, alpha=0.3)
+        # Plot 2: Spatial heatmap showing crowding
+        self.ax_heatmap = self.figure.add_subplot(212)
+        self.ax_heatmap.set_title('Spatial Crowding Heatmap')
+        self.ax_heatmap.set_xlabel('X Position (pixels)')
+        self.ax_heatmap.set_ylabel('Y Position (pixels)')
+        self.ax_heatmap.set_aspect('equal')
         
         # Create canvas
         self.canvas = FigureCanvasTkAgg(self.figure, master=plots_frame)
@@ -283,10 +286,10 @@ class OverlapTab(ttk.Frame):
             widget.destroy()
     
     def _update_plots(self, neighbor_counts, unique_counts, counts, total, params):
-        """Update histogram and cumulative plots."""
+        """Update histogram and spatial heatmap plots."""
         # Clear plots
         self.ax_histogram.clear()
-        self.ax_cumulative.clear()
+        self.ax_heatmap.clear()
         
         # Plot 1: Histogram
         colors = ['#50c878' if k == 0 else '#4a90e2' for k in unique_counts]
@@ -318,51 +321,130 @@ class OverlapTab(ttk.Frame):
             )
             self.ax_histogram.legend(fontsize=9)
         
-        # Plot 2: Cumulative distribution
-        cumulative = np.cumsum(counts) / total
-        
-        self.ax_cumulative.plot(
-            unique_counts,
-            cumulative,
-            'o-',
-            color='#4a90e2',
-            linewidth=2,
-            markersize=6,
-            label='Cumulative'
-        )
-        
-        self.ax_cumulative.set_xlabel('Number of Neighbors', fontsize=10)
-        self.ax_cumulative.set_ylabel('Cumulative Fraction', fontsize=10)
-        self.ax_cumulative.set_title('Cumulative Distribution', fontsize=11)
-        self.ax_cumulative.set_ylim(0, 1.05)
-        self.ax_cumulative.grid(True, alpha=0.3)
-        
-        # Add threshold line
-        if policy == 'overlap':
-            m = params.get('neighbor_threshold', 2)
-            self.ax_cumulative.axvline(
-                m - 0.5,
-                color='red',
-                linestyle='--',
-                linewidth=2,
-                label=f'Threshold (m={m})'
-            )
-            
-            # Add horizontal line showing survival fraction
-            if m - 1 < len(unique_counts):
-                survival_frac = cumulative[np.where(unique_counts == m - 1)[0][0]] if (m - 1) in unique_counts else 0
-                self.ax_cumulative.axhline(
-                    survival_frac,
-                    color='green',
-                    linestyle=':',
-                    linewidth=1.5,
-                    alpha=0.7,
-                    label=f'Survival = {survival_frac:.3f}'
-                )
-            
-            self.ax_cumulative.legend(fontsize=9)
+        # Plot 2: Spatial Heatmap showing where crowding occurs
+        self._update_spatial_heatmap(neighbor_counts, params)
         
         # Redraw
         self.canvas.draw()
+    
+    def _update_spatial_heatmap(self, neighbor_counts: np.ndarray, params: Dict[str, Any]) -> None:
+        """Create spatial heatmap showing neighbor count distribution across the scene.
+        
+        Args:
+            neighbor_counts: Array of neighbor counts for each object
+            params: Analysis parameters
+        """
+        # Get geometric scene
+        if not self.stats_view.state.data.has_geometric_data:
+            self.ax_heatmap.text(0.5, 0.5, 'No geometric data', 
+                                ha='center', va='center', fontsize=12)
+            return
+        
+        scene = self.stats_view.state.data.geometric_scene
+        objects = scene.objects
+        
+        if len(objects) == 0:
+            self.ax_heatmap.text(0.5, 0.5, 'No objects', 
+                                ha='center', va='center', fontsize=12)
+            return
+        
+        # Extract positions and map to neighbor counts
+        positions = np.array([obj.position for obj in objects])
+        y_coords = positions[:, 0]  # Row (Y)
+        x_coords = positions[:, 1]  # Column (X)
+        
+        # Get scene dimensions
+        H, W = scene.field_shape
+        
+        # Create 2D histogram / heatmap with appropriate binning
+        # Use adaptive binning based on scene size
+        bins_x = min(50, W // 10)
+        bins_y = min(50, H // 10)
+        
+        # Create weighted 2D histogram where weight = neighbor count
+        heatmap, xedges, yedges = np.histogram2d(
+            x_coords, y_coords,
+            bins=[bins_x, bins_y],
+            range=[[0, W], [0, H]],
+            weights=neighbor_counts
+        )
+        
+        # Also get count of objects per bin to normalize
+        count_map, _, _ = np.histogram2d(
+            x_coords, y_coords,
+            bins=[bins_x, bins_y],
+            range=[[0, W], [0, H]]
+        )
+        
+        # Normalize: average neighbor count per bin (avoid divide by zero)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            avg_heatmap = np.where(count_map > 0, heatmap / count_map, 0)
+        
+        # Determine color scale based on data range
+        # Use max of mean + 2*std to avoid outlier saturation, but ensure minimum range
+        mean_neighbors = np.mean(neighbor_counts)
+        std_neighbors = np.std(neighbor_counts)
+        max_neighbors = np.max(neighbor_counts)
+        
+        # Set vmax to capture most of the range without saturation
+        vmax = min(max_neighbors, max(mean_neighbors + 2 * std_neighbors, 5))
+        
+        # Plot heatmap
+        im = self.ax_heatmap.imshow(
+            avg_heatmap.T,
+            origin='lower',
+            extent=[0, W, 0, H],
+            cmap='YlOrRd',
+            aspect='equal',
+            interpolation='bilinear',
+            vmin=0,
+            vmax=vmax
+        )
+        
+        # Remove old colorbar if it exists to prevent duplication
+        if hasattr(self, '_heatmap_colorbar') and self._heatmap_colorbar is not None:
+            try:
+                self._heatmap_colorbar.remove()
+            except (AttributeError, KeyError, ValueError):
+                # Colorbar was already removed or axis state changed
+                pass
+        
+        # Add new colorbar
+        self._heatmap_colorbar = self.figure.colorbar(im, ax=self.ax_heatmap, fraction=0.046, pad=0.04)
+        self._heatmap_colorbar.set_label('Avg Neighbor Count', fontsize=9)
+        
+        # Overlay isolated objects as green dots
+        isolated_mask = neighbor_counts == 0
+        if np.any(isolated_mask):
+            self.ax_heatmap.scatter(
+                x_coords[isolated_mask],
+                y_coords[isolated_mask],
+                s=3,
+                c='green',
+                alpha=0.3,
+                marker='.',
+                label='Isolated (0 neighbors)'
+            )
+        
+        # Overlay highly crowded objects as red dots
+        crowded_threshold = np.percentile(neighbor_counts, 90)
+        crowded_mask = neighbor_counts >= crowded_threshold
+        if np.any(crowded_mask) and crowded_threshold > 0:
+            self.ax_heatmap.scatter(
+                x_coords[crowded_mask],
+                y_coords[crowded_mask],
+                s=5,
+                c='red',
+                alpha=0.5,
+                marker='x',
+                label=f'Highly crowded (≥{int(crowded_threshold)} neighbors)'
+            )
+        
+        self.ax_heatmap.set_xlabel('X Position (pixels)', fontsize=10)
+        self.ax_heatmap.set_ylabel('Y Position (pixels)', fontsize=10)
+        self.ax_heatmap.set_title('Spatial Crowding Heatmap', fontsize=11)
+        self.ax_heatmap.legend(fontsize=8, loc='upper right')
+        self.ax_heatmap.set_xlim(0, W)
+        self.ax_heatmap.set_ylim(0, H)
 
 
