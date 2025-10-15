@@ -1,4 +1,4 @@
-"""Main statistics view orchestrator."""
+"""Main statistics view orchestrator with nested notebook structure."""
 
 from __future__ import annotations
 
@@ -15,17 +15,18 @@ from spectral_playground.core.statistics import (
     CrowdingAnalyzer
 )
 
-from .controls import ControlsPanel
-from .metrics import MetricsPanel
-from .plots import PlotsPanel
-from .plots.plot_updater import PlotUpdater
+from .tabs import OverviewTab, CoverageTab, OverlapTab, ParametricTab
 from .utils import export_results_to_csv
 
 
 class StatisticsView(ttk.Frame):
-    """Statistical analysis dashboard with numbers-first reporting.
+    """Statistical analysis dashboard with nested notebook for organized views.
     
-    Orchestrates controls, metrics display, and plots for crowding analysis.
+    Provides multiple tabs for different aspects of crowding analysis:
+    - Overview: Main controls, key metrics, and primary plots
+    - Coverage Analysis: Detailed coverage metrics and theory comparison
+    - Overlap Statistics: Distribution analysis and higher-order overlaps
+    - Parametric Analysis: Parameter sweeps and sensitivity analysis
     """
     
     def __init__(
@@ -48,49 +49,32 @@ class StatisticsView(ttk.Frame):
         self.log = log_callback
         self.open_inspector = open_inspector_callback
         
-        # Analysis results cache
+        # Shared analysis results (accessible to all tabs)
         self.last_results: Optional[Dict[str, Any]] = None
+        self.last_theory: Optional[BooleanModelTheory] = None
+        self.last_params: Optional[Dict[str, Any]] = None
         
-        # Configure grid layout: Controls | Metrics | Plots
-        self.columnconfigure(0, weight=1, minsize=250)
-        self.columnconfigure(1, weight=1, minsize=280)
-        self.columnconfigure(2, weight=2, minsize=500)
-        self.rowconfigure(0, weight=1)
+        # Create nested notebook
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
         
-        # Create panels
-        self.controls = ControlsPanel(
-            self,
-            state,
-            log_callback,
-            run_analysis_callback=self._run_analysis,
-            export_callback=self._export_csv
-        )
-        self.controls.grid(row=0, column=0, sticky='nsew', padx=4, pady=4)
+        # Create all tabs
+        self.overview_tab = OverviewTab(self.notebook, self)
+        self.coverage_tab = CoverageTab(self.notebook, self)
+        self.overlap_tab = OverlapTab(self.notebook, self)
+        self.parametric_tab = ParametricTab(self.notebook, self)
         
-        self.metrics = MetricsPanel(self)
-        self.metrics.grid(row=0, column=1, sticky='nsew', padx=4, pady=4)
-        self.metrics.set_inspector_callbacks(
-            view_discarded_cb=self._view_discarded,
-            view_good_cb=self._view_good
-        )
+        # Add tabs to notebook
+        self.notebook.add(self.overview_tab, text='Overview')
+        self.notebook.add(self.coverage_tab, text='Coverage Analysis')
+        self.notebook.add(self.overlap_tab, text='Overlap Statistics')
+        self.notebook.add(self.parametric_tab, text='Parametric Analysis')
         
-        plots_frame = ttk.LabelFrame(self, text='Analysis Plots')
-        plots_frame.grid(row=0, column=2, sticky='nsew', padx=4, pady=4)
-        self.plots = PlotsPanel(plots_frame)
-        self.plots.pack(fill=tk.BOTH, expand=True)
-        
-        # Initialize policy visibility
-        self.controls.update_policy_visibility()
-        self.metrics.update_policy_visibility(self.controls.active_policy.get())
-        
-        # Connect policy changes to metrics
-        self.controls.active_policy.trace_add(
-            'write',
-            lambda *args: self.metrics.update_policy_visibility(self.controls.active_policy.get())
-        )
+        # Initialize policy visibility in overview tab
+        self.overview_tab.controls.update_policy_visibility()
     
-    def _run_analysis(self) -> None:
-        """Run statistical analysis on current data."""
+    def run_analysis(self) -> None:
+        """Run statistical analysis on current data and update all tabs."""
         if not self.state.data.has_geometric_data:
             messagebox.showwarning(
                 'No Data',
@@ -105,13 +89,20 @@ class StatisticsView(ttk.Frame):
             n_objects = len(scene)
             H, W = scene.field_shape
             
-            # Get parameters from controls
-            params = self.controls.get_parameters()
+            # Get parameters from overview controls
+            params = self.overview_tab.controls.get_parameters()
             a = params['box_size']
             k0 = params['box_threshold']
             m = params['neighbor_threshold']
             mode = params['count_mode']
             active_policy = params['active_policy']
+            overlap_mode = params['overlap_mode']
+            
+            # Update overlap mode and clear cached overlap graph if mode changed
+            if scene.overlap_mode != overlap_mode:
+                self.log(f'Switching overlap detection mode to: {overlap_mode}')
+                scene.overlap_mode = overlap_mode
+                scene._overlap_graph = None  # Force recomputation with new mode
             
             # Performance warnings for large datasets
             grid_H = H // a
@@ -169,7 +160,7 @@ class StatisticsView(ttk.Frame):
             
             # Compute intensity from data
             λ_empirical = len(scene) / (H * W)
-            self.controls.intensity.set(λ_empirical)
+            self.overview_tab.controls.intensity.set(λ_empirical)
             
             # Build radius distribution from scene
             radii = [obj.radius for obj in scene.objects]
@@ -179,10 +170,10 @@ class StatisticsView(ttk.Frame):
                 min_r = max(1.0, min(radii))
                 max_r = max(radii)
                 
-                self.controls.radius_mean.set(float(mean_r))
-                self.controls.radius_std.set(float(std_r))
-                self.controls.radius_min.set(float(min_r))
-                self.controls.radius_max.set(float(max_r))
+                self.overview_tab.controls.radius_mean.set(float(mean_r))
+                self.overview_tab.controls.radius_std.set(float(std_r))
+                self.overview_tab.controls.radius_min.set(float(min_r))
+                self.overview_tab.controls.radius_max.set(float(max_r))
             else:
                 # No radii in scene - use current UI values as fallback
                 mean_r = params['radius_mean']
@@ -192,10 +183,10 @@ class StatisticsView(ttk.Frame):
             
             # Create theoretical model using computed/updated values
             R_dist = RadiusDistribution(
-                mean=mean_r,      # Use computed value, not stale params
-                std=std_r,        # Use computed value, not stale params
-                r_min=min_r,      # Use computed value, not stale params
-                r_max=max_r       # Use computed value, not stale params
+                mean=mean_r,
+                std=std_r,
+                r_min=min_r,
+                r_max=max_r
             )
             
             theory = BooleanModelTheory(λ_empirical, R_dist)
@@ -209,19 +200,19 @@ class StatisticsView(ttk.Frame):
             else:
                 expected_good = 0.0
             
-            # Update metrics
-            self.metrics.update_metrics(results, expected_good)
+            # Store results for all tabs to access
+            results['expected_good'] = expected_good
+            params['lambda'] = λ_empirical
             
-            # Update plots
-            self._update_plots(theory, results, λ_empirical, params)
+            self.last_results = results
+            self.last_theory = theory
+            self.last_params = params
             
-            # Store results
-            self.last_results = {
-                **results,
-                'expected_good': expected_good,
-                'lambda': λ_empirical,
-                'active_policy': active_policy,
-            }
+            # Update all tabs
+            self.overview_tab.update_results(results, theory, params)
+            self.coverage_tab.update_results(results, theory, params)
+            self.overlap_tab.update_results(results, theory, params)
+            # Parametric tab updates on demand when user clicks compute
             
             self.log(f'Analysis complete: {results["isolated_objects"]} isolated objects found using {active_policy} policy')
             
@@ -231,74 +222,18 @@ class StatisticsView(ttk.Frame):
             import traceback
             traceback.print_exc()
     
-    def _update_plots(
-        self,
-        theory: BooleanModelTheory,
-        results: Dict[str, Any],
-        λ_current: float,
-        params: Dict[str, Any]
-    ) -> None:
-        """Update all analysis plots.
-        
-        Args:
-            theory: Boolean model theory instance
-            results: Analysis results
-            λ_current: Current intensity
-            params: Analysis parameters
-        """
-        # Clear all plots
-        self.plots.clear_all()
-        
-        policy = results.get('policy', 'overlap')
-        
-        # Update survival vs lambda plot
-        PlotUpdater.update_survival_vs_lambda(
-            self.plots.ax_survival_lambda,
-            theory,
-            results,
-            λ_current,
-            policy,
-            params
-        )
-        
-        # Update survival vs threshold plot
-        PlotUpdater.update_survival_vs_threshold(
-            self.plots.ax_survival_threshold,
-            theory,
-            results,
-            λ_current,
-            policy,
-            params
-        )
-        
-        # Update isolated count plot
-        H, W = self.state.data.geometric_scene.field_shape
-        area_px2 = H * W
-        
-        PlotUpdater.update_isolated_count(
-            self.plots.ax_isolated_count,
-            theory,
-            results,
-            area_px2,
-            policy,
-            params
-        )
-        
-        # Redraw
-        self.plots.draw()
-    
-    def _export_csv(self) -> None:
+    def export_csv(self) -> None:
         """Export results to CSV."""
         export_results_to_csv(self.last_results, self.log)
     
-    def _view_discarded(self) -> None:
+    def view_discarded(self) -> None:
         """Open Inspector with discarded objects."""
         if self.last_results is None or self.open_inspector is None:
             messagebox.showwarning('No Results', 'Run analysis first.')
             return
         
         scene = self.state.data.geometric_scene
-        policy = self.last_results.get('active_policy', 'overlap')
+        policy = self.last_results.get('policy', 'overlap')
         
         discarded_ids = list(self.last_results['discarded_object_ids'])
         
@@ -320,7 +255,7 @@ class StatisticsView(ttk.Frame):
         self.open_inspector(discarded_ids_sorted)
         self.log(f'Opening inspector with {len(discarded_ids_sorted)} discarded objects ({policy} policy) {sort_desc}')
     
-    def _view_good(self) -> None:
+    def view_good(self) -> None:
         """Open Inspector with isolated objects."""
         if self.last_results is None or self.open_inspector is None:
             messagebox.showwarning('No Results', 'Run analysis first.')
@@ -330,7 +265,7 @@ class StatisticsView(ttk.Frame):
         if scene is None:
             return
         
-        policy = self.last_results.get('active_policy', 'overlap')
+        policy = self.last_results.get('policy', 'overlap')
         discarded_ids = self.last_results['discarded_object_ids']
         
         isolated_ids = [obj.id for obj in scene.objects if obj.id not in discarded_ids]
@@ -352,4 +287,3 @@ class StatisticsView(ttk.Frame):
         
         self.open_inspector(isolated_ids_sorted)
         self.log(f'Opening inspector with {len(isolated_ids_sorted)} isolated objects ({policy} policy) {sort_desc}')
-

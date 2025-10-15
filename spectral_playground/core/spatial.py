@@ -185,6 +185,7 @@ class AbundanceField:
         base: Array | None = None,
         track_objects: bool = True,
         use_ppp: bool = False,
+        overlap_mode: str = 'continuous',
     ) -> tuple[Array, GeometricScene]:
         """Build abundance maps from a list of object specs.
 
@@ -441,7 +442,7 @@ class AbundanceField:
                         raise ValueError(f"Unknown object kind: {kind}")
 
         # Create geometric scene
-        geometric_scene = GeometricScene(geometric_objects, field.shape)
+        geometric_scene = GeometricScene(geometric_objects, field.shape, overlap_mode)
         
         return A_maps.reshape(K, P), geometric_scene
 

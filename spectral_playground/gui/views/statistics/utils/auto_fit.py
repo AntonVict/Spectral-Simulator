@@ -59,7 +59,7 @@ def auto_fit_parameters_from_scene(
     # Create detailed info message
     info_message = (
         f'All parameters fitted from scene:\n\n'
-        f'Spatial intensity (λ): {λ_empirical:.6f} obj/px²\n'
+        f'Spatial density (λ): {λ_empirical:.6f} obj/px²\n'
         f'Radius mean (μ): {mean_r:.2f} px\n'
         f'Radius std (σ): {std_r:.2f} px\n'
         f'Radius range: [{min_r:.2f}, {max_r:.2f}] px'

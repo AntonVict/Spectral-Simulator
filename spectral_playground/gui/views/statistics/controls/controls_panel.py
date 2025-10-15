@@ -39,8 +39,9 @@ class ControlsPanel(ttk.Frame):
         
         # Initialize all parameter variables
         self.active_policy = tk.StringVar(value='overlap')
+        self.overlap_mode = tk.StringVar(value='continuous')
         self.intensity = tk.DoubleVar(value=0.001)
-        self.neighbor_threshold = tk.IntVar(value=2)
+        self.neighbor_threshold = tk.IntVar(value=1)
         self.box_size = tk.IntVar(value=8)
         self.box_threshold = tk.IntVar(value=2)
         self.count_mode = tk.StringVar(value='germ')
@@ -97,8 +98,34 @@ class ControlsPanel(ttk.Frame):
             value='box'
         ).pack(anchor='w', padx=4)
         
+        # Overlap Detection Mode
+        overlap_mode_frame = ttk.LabelFrame(scrollable_frame, text='Overlap Detection Mode')
+        overlap_mode_frame.pack(fill=tk.X, padx=4, pady=4)
+        
+        ttk.Radiobutton(
+            overlap_mode_frame,
+            text='Continuous (sub-pixel)',
+            variable=self.overlap_mode,
+            value='continuous'
+        ).pack(anchor='w', padx=4)
+        
+        ttk.Radiobutton(
+            overlap_mode_frame,
+            text='Discrete (pixelated)',
+            variable=self.overlap_mode,
+            value='pixelated'
+        ).pack(anchor='w', padx=4)
+        
+        ttk.Label(
+            overlap_mode_frame,
+            text='Continuous: Exact geometric overlap\nPixel-Based: Simulates image analysis',
+            font=('TkDefaultFont', 8, 'italic'),
+            foreground='#555',
+            justify=tk.LEFT
+        ).pack(anchor='w', padx=4, pady=(2, 4))
+        
         # Spatial intensity (λ)
-        intensity_frame = ttk.LabelFrame(scrollable_frame, text='Spatial Intensity')
+        intensity_frame = ttk.LabelFrame(scrollable_frame, text='Spatial Density')
         intensity_frame.pack(fill=tk.X, padx=4, pady=4)
         
         ttk.Label(intensity_frame, text='λ (objects per pixel²):').pack(anchor='w', padx=4)
@@ -240,6 +267,7 @@ class ControlsPanel(ttk.Frame):
         """
         return {
             'active_policy': self.active_policy.get(),
+            'overlap_mode': self.overlap_mode.get(),
             'intensity': self.intensity.get(),
             'neighbor_threshold': self.neighbor_threshold.get(),
             'box_size': self.box_size.get(),

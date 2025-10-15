@@ -46,15 +46,18 @@ class GeometricScene:
     spatial queries, overlap detection, and conversion to various formats.
     """
     
-    def __init__(self, objects: List[GeometricObject], field_shape: Tuple[int, int]):
+    def __init__(self, objects: List[GeometricObject], field_shape: Tuple[int, int], 
+                 overlap_mode: str = 'continuous'):
         """Initialize geometric scene.
         
         Args:
             objects: List of GeometricObject instances
             field_shape: (H, W) dimensions of the field in pixels
+            overlap_mode: Overlap detection mode ('continuous' or 'pixelated')
         """
         self.objects = objects
         self.field_shape = field_shape
+        self.overlap_mode = overlap_mode
         
         # Lazy-loaded properties
         self._spatial_index: Optional[cKDTree] = None
@@ -77,7 +80,10 @@ class GeometricScene:
     def overlap_graph(self) -> List[List[int]]:
         """Get precomputed adjacency list of overlapping object pairs."""
         if self._overlap_graph is None:
-            self._precompute_overlaps()
+            if self.overlap_mode == 'pixelated':
+                self._precompute_overlaps_pixelated()
+            else:  # continuous (default)
+                self._precompute_overlaps()
         return self._overlap_graph
     
     def _precompute_overlaps(self) -> None:
@@ -127,6 +133,76 @@ class GeometricScene:
             
             # Check overlap condition for all candidates at once
             overlaps = dists < (obj.radius + candidate_radii)
+            
+            # Add overlapping pairs (avoiding duplicates and self)
+            for idx, j in enumerate(candidates):
+                if i >= j:  # Avoid duplicates and self
+                    continue
+                
+                if overlaps[idx]:
+                    self._overlap_graph[i].append(j)
+                    self._overlap_graph[j].append(i)
+    
+    def _precompute_overlaps_pixelated(self) -> None:
+        """Precompute overlaps using pixel-based discretization.
+        
+        Rounds positions and radii to integers, then uses the same efficient
+        distance-based overlap detection as continuous mode. This is much faster
+        than pixel-by-pixel rasterization while still simulating discretization
+        effects from real image analysis.
+        """
+        n = len(self.objects)
+        self._overlap_graph = [[] for _ in range(n)]
+        
+        if n == 0:
+            return
+        
+        # Performance guard for very large scenes
+        if n > 200000:
+            import warnings
+            warnings.warn(
+                f"Skipping pixelated overlap precomputation for {n} objects (would be very slow). "
+                "Object-based crowding analysis will be unavailable.",
+                UserWarning
+            )
+            return
+        
+        # Round all positions and radii to integers (simulate pixel discretization)
+        centers_rounded = np.array([
+            (round(obj.position[0]), round(obj.position[1])) 
+            for obj in self.objects
+        ])
+        radii_rounded = np.array([
+            max(1, round(obj.radius)) 
+            for obj in self.objects
+        ])
+        max_radius = radii_rounded.max()
+        
+        # Build KD-tree on rounded centers for fast spatial queries
+        tree_rounded = cKDTree(centers_rounded)
+        
+        # Check overlaps using rounded values (same algorithm as continuous mode)
+        for i in range(n):
+            # Query neighbors using rounded position
+            search_radius = radii_rounded[i] + max_radius
+            candidates = tree_rounded.query_ball_point(
+                centers_rounded[i],
+                r=search_radius
+            )
+            
+            if len(candidates) == 0:
+                continue
+            
+            # Vectorized distance computation using rounded centers
+            candidate_centers = centers_rounded[candidates]
+            dists = np.linalg.norm(
+                candidate_centers - centers_rounded[i], 
+                axis=1
+            )
+            candidate_radii = radii_rounded[candidates]
+            
+            # Check overlap condition with ROUNDED values
+            overlaps = dists < (radii_rounded[i] + candidate_radii)
             
             # Add overlapping pairs (avoiding duplicates and self)
             for idx, j in enumerate(candidates):
