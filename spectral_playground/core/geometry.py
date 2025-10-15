@@ -567,6 +567,140 @@ class GeometricScene:
             'per_object_counts': per_object_counts
         }
     
+    def compute_epsilon_margin_analysis(
+        self,
+        epsilon_values_empirical: List[float],
+        epsilon_values_theoretical: List[float]
+    ) -> Dict[str, Any]:
+        """Analyze how many objects are naturally isolated with epsilon-margin requirement.
+        
+        Computes both empirical (isolation counting) and theoretical (Palm distribution)
+        predictions for how many objects are epsilon-isolated (all neighbors have gap >= epsilon).
+        
+        Args:
+            epsilon_values_empirical: Key epsilon values for empirical computation (few points)
+            epsilon_values_theoretical: Epsilon values for theoretical curve (many points)
+        
+        Returns dict with:
+            - epsilon_empirical: Epsilon values tested empirically
+            - kept_empirical: Actual objects that are epsilon-isolated at each epsilon
+            - kept_empirical_pct: Percentage isolated empirically
+            - epsilon_theoretical: Epsilon values for theory curve
+            - kept_theoretical: Predicted objects isolated (theory)
+            - kept_theoretical_pct: Percentage isolated (theory)
+            - survival_prob_theoretical: P(isolated) at each epsilon
+        """
+        n = len(self.objects)
+        
+        if n == 0:
+            return {
+                'epsilon_empirical': [],
+                'kept_empirical': [],
+                'kept_empirical_pct': [],
+                'epsilon_theoretical': [],
+                'kept_theoretical': [],
+                'kept_theoretical_pct': [],
+                'survival_prob_theoretical': []
+            }
+        
+        # Compute theoretical predictions (fast!)
+        H, W = self.field_shape
+        area = H * W
+        lambda_density = n / area
+        
+        radii = np.array([obj.radius for obj in self.objects])
+        mean_radius = np.mean(radii)
+        
+        kept_theoretical = []
+        kept_theoretical_pct = []
+        survival_prob = []
+        
+        for eps in epsilon_values_theoretical:
+            # Effective exclusion radius with epsilon margin
+            # Need both object radii (central + neighbor) plus epsilon gap
+            r_eff = 2 * mean_radius + eps
+            exclusion_area = np.pi * r_eff ** 2
+            
+            # Palm distribution survival probability
+            p_survive = np.exp(-lambda_density * exclusion_area)
+            
+            # Expected kept objects
+            n_kept = n * p_survive
+            pct_kept = 100 * p_survive
+            
+            kept_theoretical.append(n_kept)
+            kept_theoretical_pct.append(pct_kept)
+            survival_prob.append(p_survive)
+        
+        # Compute empirical values using isolation counting (slower)
+        kept_empirical = []
+        kept_empirical_pct = []
+        
+        for eps in epsilon_values_empirical:
+            n_isolated_emp = self._count_epsilon_isolated(eps)
+            pct_isolated_emp = 100 * n_isolated_emp / n if n > 0 else 0
+            
+            kept_empirical.append(n_isolated_emp)
+            kept_empirical_pct.append(pct_isolated_emp)
+        
+        return {
+            'epsilon_empirical': epsilon_values_empirical,
+            'kept_empirical': kept_empirical,
+            'kept_empirical_pct': kept_empirical_pct,
+            'epsilon_theoretical': epsilon_values_theoretical,
+            'kept_theoretical': kept_theoretical,
+            'kept_theoretical_pct': kept_theoretical_pct,
+            'survival_prob_theoretical': survival_prob
+        }
+    
+    def _count_epsilon_isolated(self, epsilon: float) -> int:
+        """Count objects that are naturally epsilon-isolated.
+        
+        An object is "epsilon-isolated" if ALL its neighbors have gap >= epsilon.
+        This is similar to Overview's "isolated objects" but with stricter distance requirement.
+        
+        This is NOT optimization/greedy selection - just counting objects that satisfy the criterion.
+        
+        Args:
+            epsilon: Required gap distance between object edges (pixels)
+        
+        Returns:
+            Number of objects that are naturally epsilon-isolated
+        """
+        n = len(self.objects)
+        if n == 0:
+            return 0
+        
+        centers = np.array([obj.position for obj in self.objects])
+        radii = np.array([obj.radius for obj in self.objects])
+        max_radius = radii.max()
+        tree = self.spatial_index
+        
+        isolated_count = 0
+        
+        for i in range(n):
+            # Find all nearby objects (potential violators)
+            search_radius = radii[i] + max_radius + epsilon
+            candidates = tree.query_ball_point(centers[i], r=search_radius)
+            
+            # Check if this object is epsilon-isolated
+            is_isolated = True
+            for j in candidates:
+                if i == j:
+                    continue
+                
+                distance = np.linalg.norm(centers[i] - centers[j])
+                gap = distance - (radii[i] + radii[j])
+                
+                if gap < epsilon:  # Has a neighbor too close!
+                    is_isolated = False
+                    break
+            
+            if is_isolated:
+                isolated_count += 1
+        
+        return isolated_count
+    
     def __len__(self) -> int:
         """Return number of objects in scene."""
         return len(self.objects)
