@@ -155,7 +155,7 @@ class CoverageTab(ttk.Frame):
         
         ttk.Label(
             info_frame,
-            text='where λ = intensity,\nE[R²] = 2nd moment of radius',
+            text='where λ = density,\nE[R²] = 2nd moment of radius',
             font=('TkDefaultFont', 8),
             justify=tk.LEFT
         ).pack(padx=4, pady=(0, 4))
@@ -171,8 +171,8 @@ class CoverageTab(ttk.Frame):
         
         # Plot 1: Coverage vs λ (varying intensity)
         self.ax_coverage_lambda = self.figure.add_subplot(221)
-        self.ax_coverage_lambda.set_title('Coverage vs Intensity', fontsize=10)
-        self.ax_coverage_lambda.set_xlabel('Intensity λ', fontsize=9)
+        self.ax_coverage_lambda.set_title('Coverage vs Density', fontsize=10)
+        self.ax_coverage_lambda.set_xlabel('Density λ', fontsize=9)
         self.ax_coverage_lambda.set_ylabel('Coverage Fraction', fontsize=9)
         self.ax_coverage_lambda.grid(True, alpha=0.3)
         
@@ -250,9 +250,9 @@ class CoverageTab(ttk.Frame):
         self.ax_coverage_lambda.plot(λ_values, coverage_values, 'b-', linewidth=2, label='Theory')
         self.ax_coverage_lambda.plot(λ_current, theoretical, 'ro', markersize=8, label='Current')
         self.ax_coverage_lambda.plot(λ_current, empirical, 'g^', markersize=8, label='Empirical')
-        self.ax_coverage_lambda.set_xlabel('Intensity λ', fontsize=9)
+        self.ax_coverage_lambda.set_xlabel('Density λ', fontsize=9)
         self.ax_coverage_lambda.set_ylabel('Coverage Fraction', fontsize=9)
-        self.ax_coverage_lambda.set_title('Coverage vs Intensity', fontsize=10)
+        self.ax_coverage_lambda.set_title('Coverage vs Density', fontsize=10)
         self.ax_coverage_lambda.legend(fontsize=8)
         self.ax_coverage_lambda.grid(True, alpha=0.3)
         
@@ -325,4 +325,5 @@ class CoverageTab(ttk.Frame):
         
         # Redraw
         self.canvas.draw()
+
 

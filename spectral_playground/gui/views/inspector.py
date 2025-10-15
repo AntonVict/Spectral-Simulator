@@ -29,16 +29,23 @@ class ObjectInspectorView(ttk.Frame):
         self.filtered_df: pd.DataFrame = pd.DataFrame()  # After filters applied
         self.selected_objects: List[int] = []  # List of object IDs
         
+        # Selection management
+        self.selection_locked = False  # Prevents accidental clearing of pre-selected objects
+        
         # Filter state
         self.filter_fluor = tk.StringVar(value="All")
         self.filter_type = tk.StringVar(value="All")
-        self.filter_object = tk.StringVar(value="All")  # NEW: Filter by object name
-        self.filter_binary = tk.StringVar(value="All")  # NEW: Filter by binary fluorophore
+        self.filter_object = tk.StringVar(value="All")  # Filter by object name
+        self.filter_binary = tk.StringVar(value="All")  # Filter by binary fluorophore
+        self.filter_overlap = tk.StringVar(value="All")  # NEW: Filter by overlap status
+        self.filter_radius_min = tk.DoubleVar(value=0.0)  # NEW: Min radius
+        self.filter_radius_max = tk.DoubleVar(value=100.0)  # NEW: Max radius
         self.filter_intensity_min = tk.DoubleVar(value=0.0)
         self.filter_intensity_max = tk.DoubleVar(value=10.0)
         self.search_var = tk.StringVar()
         self.search_var.trace('w', lambda *args: self._apply_filters())
         self.show_selected_only = tk.BooleanVar(value=False)
+        self.lock_selection = tk.BooleanVar(value=False)
         
         self._build_ui()
         
@@ -131,23 +138,26 @@ class ObjectInspectorView(ttk.Frame):
         
     def _build_filters(self, parent: ttk.Frame):
         """Build filter controls."""
-        # Row 0: Search and Show Selected Only
+        # Row 0: Search and checkboxes
         ttk.Label(parent, text="Search:").grid(row=0, column=0, sticky='w', padx=2, pady=2)
         ttk.Entry(parent, textvariable=self.search_var, width=15).grid(row=0, column=1, sticky='ew', padx=2, pady=2)
         
         # Show Selected Only checkbox
-        show_sel_cb = ttk.Checkbutton(parent, text="Selected Only", 
-                                      variable=self.show_selected_only,
-                                      command=self._apply_filters)
-        show_sel_cb.grid(row=0, column=2, sticky='w', padx=(10,2), pady=2)
+        ttk.Checkbutton(parent, text="Selected Only", 
+                       variable=self.show_selected_only,
+                       command=self._apply_filters).grid(row=0, column=2, sticky='w', padx=(10,2), pady=2)
+        
+        # Lock Selection checkbox
+        ttk.Checkbutton(parent, text="Lock Selection", 
+                       variable=self.lock_selection).grid(row=0, column=3, sticky='w', padx=2, pady=2)
         
         # Row 0: Fluorophore filter
-        ttk.Label(parent, text="Fluorophore:").grid(row=0, column=3, sticky='w', padx=(10,2), pady=2)
+        ttk.Label(parent, text="Fluorophore:").grid(row=0, column=4, sticky='w', padx=(10,2), pady=2)
         self.fluor_combo = ttk.Combobox(parent, textvariable=self.filter_fluor, state='readonly', width=12)
-        self.fluor_combo.grid(row=0, column=4, sticky='ew', padx=2, pady=2)
+        self.fluor_combo.grid(row=0, column=5, sticky='ew', padx=2, pady=2)
         self.fluor_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
-        # Row 1: Type filter and Object name filter
+        # Row 1: Type, Object name, Binary filters
         ttk.Label(parent, text="Type:").grid(row=1, column=0, sticky='w', padx=2, pady=2)
         type_combo = ttk.Combobox(parent, textvariable=self.filter_type, 
                                   values=["All", "dots", "gaussian_blobs", "circles", "boxes"],
@@ -155,31 +165,44 @@ class ObjectInspectorView(ttk.Frame):
         type_combo.grid(row=1, column=1, sticky='ew', padx=2, pady=2)
         type_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
-        # Row 1: Object name filter
         ttk.Label(parent, text="Object:").grid(row=1, column=2, sticky='w', padx=(10,2), pady=2)
         self.object_combo = ttk.Combobox(parent, textvariable=self.filter_object, state='readonly', width=10)
         self.object_combo.grid(row=1, column=3, sticky='ew', padx=2, pady=2)
         self.object_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
-        # Row 1: Binary fluorophore filter
         ttk.Label(parent, text="Binary:").grid(row=1, column=4, sticky='w', padx=(10,2), pady=2)
         self.binary_combo = ttk.Combobox(parent, textvariable=self.filter_binary, state='readonly', width=10)
         self.binary_combo.grid(row=1, column=5, sticky='ew', padx=2, pady=2)
         self.binary_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
         
-        # Row 2: Intensity range
-        ttk.Label(parent, text="Intensity:").grid(row=2, column=0, sticky='w', padx=2, pady=2)
+        # Row 2: Radius, Overlap, Apply button
+        ttk.Label(parent, text="Radius:").grid(row=2, column=0, sticky='w', padx=2, pady=2)
+        radius_frame = ttk.Frame(parent)
+        radius_frame.grid(row=2, column=1, sticky='ew', padx=2, pady=2)
+        ttk.Entry(radius_frame, textvariable=self.filter_radius_min, width=6).pack(side=tk.LEFT)
+        ttk.Label(radius_frame, text="to").pack(side=tk.LEFT, padx=2)
+        ttk.Entry(radius_frame, textvariable=self.filter_radius_max, width=6).pack(side=tk.LEFT)
+        
+        ttk.Label(parent, text="Overlap:").grid(row=2, column=2, sticky='w', padx=(10,2), pady=2)
+        self.overlap_combo = ttk.Combobox(parent, textvariable=self.filter_overlap, state='readonly', width=10)
+        self.overlap_combo['values'] = ["All", "Isolated (0)", "Has overlaps (1+)", "1 neighbor", "2-4 neighbors", "5+ neighbors"]
+        self.overlap_combo.grid(row=2, column=3, sticky='ew', padx=2, pady=2)
+        self.overlap_combo.bind('<<ComboboxSelected>>', lambda e: self._apply_filters())
+        
+        # Row 3: Intensity range and Apply button
+        ttk.Label(parent, text="Intensity:").grid(row=3, column=0, sticky='w', padx=2, pady=2)
         intensity_frame = ttk.Frame(parent)
-        intensity_frame.grid(row=1, column=3, columnspan=2, sticky='ew', padx=2, pady=2)
+        intensity_frame.grid(row=3, column=1, sticky='ew', padx=2, pady=2)
         ttk.Entry(intensity_frame, textvariable=self.filter_intensity_min, width=6).pack(side=tk.LEFT)
         ttk.Label(intensity_frame, text="to").pack(side=tk.LEFT, padx=2)
         ttk.Entry(intensity_frame, textvariable=self.filter_intensity_max, width=6).pack(side=tk.LEFT)
         
         # Apply button
-        ttk.Button(parent, text="Apply", command=self._apply_filters, width=8).grid(row=1, column=5, padx=4, pady=2)
+        ttk.Button(parent, text="Apply Filters", command=self._apply_filters, width=12).grid(row=3, column=3, padx=4, pady=2)
         
         parent.columnconfigure(1, weight=1)
-        parent.columnconfigure(4, weight=1)
+        parent.columnconfigure(3, weight=1)
+        parent.columnconfigure(5, weight=1)
     
     def _build_details_panel(self, parent: ttk.Frame):
         """Build details panel for selected object(s)."""
@@ -234,6 +257,32 @@ class ObjectInspectorView(ttk.Frame):
         
         # Convert to DataFrame - pandas handles list of dicts naturally
         self.df = pd.DataFrame(objects_list)
+        
+        # Compute neighbor counts if geometric scene is available
+        if data.has_geometric_data:
+            scene = data.geometric_scene
+            neighbor_counts = []
+            for obj in scene.objects:
+                n_neighbors = len(scene.get_neighbors(obj.id))
+                neighbor_counts.append(n_neighbors)
+            
+            # Add neighbor_count column to DataFrame
+            self.df['neighbor_count'] = neighbor_counts
+        else:
+            self.df['neighbor_count'] = 0  # No geometric data
+        
+        # Auto-detect and set filter ranges
+        if 'radius' in self.df.columns and len(self.df) > 0:
+            min_r = float(self.df['radius'].min())
+            max_r = float(self.df['radius'].max())
+            self.filter_radius_min.set(min_r)
+            self.filter_radius_max.set(max_r * 1.1)  # Add 10% headroom
+        
+        if 'base_intensity' in self.df.columns and len(self.df) > 0:
+            min_int = float(self.df['base_intensity'].min())
+            max_int = float(self.df['base_intensity'].max())
+            self.filter_intensity_min.set(min_int)
+            self.filter_intensity_max.set(max_int * 1.1)  # Add 10% headroom
         
         # Update filter options
         fluor_names = self.get_fluorophore_names()
@@ -310,7 +359,30 @@ class ObjectInspectorView(ttk.Frame):
             except (ValueError, KeyError):
                 pass  # Invalid fluorophore, skip filter
         
-        # Filter 7: Text search
+        # Filter 7: Radius range
+        if 'radius' in filtered.columns:
+            radius_min = self.filter_radius_min.get()
+            radius_max = self.filter_radius_max.get()
+            filtered = filtered[
+                (filtered['radius'] >= radius_min) &
+                (filtered['radius'] <= radius_max)
+            ]
+        
+        # Filter 8: Overlap status
+        overlap_filter = self.filter_overlap.get()
+        if overlap_filter != "All" and 'neighbor_count' in filtered.columns:
+            if overlap_filter == "Isolated (0)":
+                filtered = filtered[filtered['neighbor_count'] == 0]
+            elif overlap_filter == "Has overlaps (1+)":
+                filtered = filtered[filtered['neighbor_count'] >= 1]
+            elif overlap_filter == "1 neighbor":
+                filtered = filtered[filtered['neighbor_count'] == 1]
+            elif overlap_filter == "2-4 neighbors":
+                filtered = filtered[(filtered['neighbor_count'] >= 2) & (filtered['neighbor_count'] <= 4)]
+            elif overlap_filter == "5+ neighbors":
+                filtered = filtered[filtered['neighbor_count'] >= 5]
+        
+        # Filter 9: Text search
         search_text = self.search_var.get().lower()
         if search_text:
             # Search in ID, object name, and position columns
@@ -354,7 +426,7 @@ class ObjectInspectorView(ttk.Frame):
             
             obj_type = row['type']
             pos = row['position']
-            pos_str = f"({pos[0]:.1f}, {pos[1]:.1f})"
+            pos_str = f"({pos[1]:.1f}, {pos[0]:.1f})"
             radius = row.get('radius', row.get('spot_sigma', 0) * 2.0)
             
             self.tree.insert('', 'end', iid=str(obj_id), values=(
@@ -381,6 +453,21 @@ class ObjectInspectorView(ttk.Frame):
     
     def _on_object_select(self, event=None):
         """Handle object selection in tree."""
+        # Check if selection is locked
+        if self.lock_selection.get() and self.selection_locked:
+            # Restore previous selection
+            self.tree.selection_remove(self.tree.selection())
+            for obj_id in self.selected_objects:
+                try:
+                    self.tree.selection_add(str(obj_id))
+                except:
+                    pass  # Object not in filtered view
+            return
+        
+        # Unlock if user explicitly clears selection
+        if not self.lock_selection.get():
+            self.selection_locked = False
+        
         selection = self.tree.selection()
         self.selected_objects = [int(item) for item in selection]
         self._update_stats()
@@ -423,7 +510,8 @@ class ObjectInspectorView(ttk.Frame):
         ttk.Label(props_frame, text=f"ID: {obj['id']}").pack(anchor='w', padx=4, pady=2)
         ttk.Label(props_frame, text=f"Type: {obj.get('type', 'unknown')}").pack(anchor='w', padx=4, pady=2)
         pos = obj.get('position', (0, 0))
-        ttk.Label(props_frame, text=f"Position: ({pos[0]:.2f}, {pos[1]:.2f}) px").pack(anchor='w', padx=4, pady=2)
+        # Display as (x, y) for user clarity (stored order is (y, x))
+        ttk.Label(props_frame, text=f"Position: ({pos[1]:.2f}, {pos[0]:.2f}) px").pack(anchor='w', padx=4, pady=2)
         ttk.Label(props_frame, text=f"Base Intensity: {obj.get('base_intensity', 0):.4f}").pack(anchor='w', padx=4, pady=2)
         
         if obj.get('type') in ('gaussian_blobs', 'dots'):
@@ -506,6 +594,10 @@ class ObjectInspectorView(ttk.Frame):
     
     def _clear_selection(self):
         """Clear current selection."""
+        # Unlock selection when explicitly clearing
+        self.selection_locked = False
+        self.lock_selection.set(False)
+        
         self.tree.selection_remove(self.tree.selection())
         self.selected_objects = []
         self._update_stats()
@@ -517,6 +609,10 @@ class ObjectInspectorView(ttk.Frame):
         Args:
             object_ids: List of object IDs to select
         """
+        # Set selection lock and flag when programmatically selecting
+        self.selection_locked = True
+        self.lock_selection.set(True)
+        
         # Temporarily unbind selection event to prevent multiple triggers
         # This prevents _on_object_select from being called for each item added
         self.tree.unbind('<<TreeviewSelect>>')
