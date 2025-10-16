@@ -348,6 +348,46 @@ class GeometricScene:
         
         return A_maps.reshape(K, H * W)
     
+    @staticmethod
+    def _circle_intersection_area(r1: float, r2: float, d: float) -> float:
+        """Compute area of intersection between two circles.
+        
+        Args:
+            r1: Radius of first circle
+            r2: Radius of second circle
+            d: Distance between centers
+            
+        Returns:
+            Intersection area in square pixels
+        """
+        # No overlap
+        if d >= r1 + r2:
+            return 0.0
+        
+        # One circle fully inside the other
+        if d <= abs(r1 - r2):
+            return np.pi * min(r1, r2) ** 2
+        
+        # Partial overlap - use circular segment formula
+        # Area = r1² * arccos((d² + r1² - r2²)/(2*d*r1)) 
+        #      + r2² * arccos((d² + r2² - r1²)/(2*d*r2))
+        #      - 0.5 * sqrt((r1+r2-d) * (d+r1-r2) * (d-r1+r2) * (d+r1+r2))
+        
+        d2 = d * d
+        r1_2 = r1 * r1
+        r2_2 = r2 * r2
+        
+        # Angle subtended by intersection in each circle
+        alpha1 = np.arccos((d2 + r1_2 - r2_2) / (2 * d * r1))
+        alpha2 = np.arccos((d2 + r2_2 - r1_2) / (2 * d * r2))
+        
+        # Area using circular segment formula
+        area = (r1_2 * alpha1 + r2_2 * alpha2 - 
+                0.5 * np.sqrt((r1 + r2 - d) * (d + r1 - r2) * 
+                             (d - r1 + r2) * (d + r1 + r2)))
+        
+        return area
+    
     def compute_overlap_metrics(self) -> Dict[str, Any]:
         """Compute overlap intensity metrics for pairs that DO overlap.
         
@@ -361,9 +401,9 @@ class GeometricScene:
             - overlap_depth = overlap_length / (r_i + r_j)  [0-1, symmetric]
                 * 0 = just touching, 1 = centers coincide
                 * For equal sizes: 0.5 = halfway overlapped
-            - coverage_fraction = min(1.0, overlap_length / min(r_i, r_j))  [0-1, capped]
-                * How many "smaller radii" does overlap span (capped at 1.0)
-                * 1.0 = overlap spans entire smaller radius
+            - coverage_fraction = intersection_area / area_of_smaller_circle  [0-1]
+                * Fraction of smaller circle's area covered by intersection
+                * 1.0 = smaller circle fully covered/engulfed
         """
         n = len(self.objects)
         overlap_pairs = []
@@ -408,7 +448,11 @@ class GeometricScene:
                 
                 if overlap_length > 0:  # Should always be true for overlapping pairs
                     overlap_depth = overlap_length / r_sum
-                    coverage_fraction = min(1.0, overlap_length / min(r_i, r_j))
+                    
+                    # Compute area-based coverage fraction
+                    intersection_area = self._circle_intersection_area(r_i, r_j, distance)
+                    smaller_area = np.pi * min(r_i, r_j) ** 2
+                    coverage_fraction = intersection_area / smaller_area
                     
                     # Store pair metrics
                     overlap_pairs.append((i, j, overlap_depth, coverage_fraction, distance))

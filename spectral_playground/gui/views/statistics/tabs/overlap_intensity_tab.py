@@ -145,14 +145,14 @@ class OverlapIntensityTab(ttk.Frame):
         
         ttk.Label(
             formula_frame,
-            text='coverage = min(1, overlap_length / min(rᵢ, rⱼ))',
+            text='coverage = intersection_area / area_smaller',
             font=('TkDefaultFont', 9),
             foreground='#2a7f2a'
         ).pack(padx=4, pady=(0, 2))
         
         ttk.Label(
             formula_frame,
-            text='Range: [0, 1] (capped at 100%)\n• Measures smaller object coverage\n• 1 = full engulfment of smaller',
+            text='Range: [0, 1]\n• Area-based: actual geometric overlap\n• 1 = smaller circle fully covered',
             font=('TkDefaultFont', 8),
             foreground='#555',
             justify=tk.LEFT
@@ -161,16 +161,16 @@ class OverlapIntensityTab(ttk.Frame):
         # Key relationship
         ttk.Label(
             formula_frame,
-            text='Equal-sized objects:',
+            text='Note:',
             font=('TkDefaultFont', 8, 'bold')
         ).pack(anchor='w', padx=4, pady=(4, 2))
         
         ttk.Label(
             formula_frame,
-            text='coverage = 2 × depth',
-            font=('TkDefaultFont', 9, 'italic'),
+            text='Non-linear relationship with depth\ndue to circular geometry',
+            font=('TkDefaultFont', 8, 'italic'),
             foreground='#2a5f7f'
-        ).pack(padx=4, pady=(0, 4))
+        ).pack(anchor='w', padx=4, pady=(0, 4))
     
     def _build_plots(self) -> None:
         """Build plots panel (right column)."""
@@ -392,12 +392,6 @@ class OverlapIntensityTab(ttk.Frame):
                 vmax=1
             )
             
-            # Add CORRECT diagonal reference line: coverage = 2 × depth for equal sizes
-            x_ref = np.array([0, 50])  # Only go to 50% depth since coverage caps at 100%
-            y_ref = 2 * x_ref
-            self.ax3.plot(x_ref, y_ref, 'b--', alpha=0.5, linewidth=2, 
-                         label='Equal sizes (coverage = 2×depth)')
-            
             # Remove old colorbar if it exists to prevent duplication
             if hasattr(self, '_scatter_colorbar') and self._scatter_colorbar is not None:
                 try:
@@ -415,13 +409,12 @@ class OverlapIntensityTab(ttk.Frame):
             self.ax3.set_title(f'Overlap Metrics Correlation (n={len(depths)})', fontsize=9)
             self.ax3.set_xlim(-5, 105)
             self.ax3.set_ylim(-5, 105)
-            self.ax3.legend(fontsize=7, loc='lower right')
             self.ax3.grid(True, alpha=0.3)
             
             # Add text annotation explaining patterns
             self.ax3.text(
                 0.02, 0.98, 
-                'Blue line: equal sizes\nAbove line: small overlaps large\nBelow line: impossible',
+                'Coverage based on actual\nintersection area geometry',
                 transform=self.ax3.transAxes,
                 fontsize=7,
                 verticalalignment='top',
