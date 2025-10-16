@@ -50,7 +50,7 @@ class PlotUpdater:
                 [λ_current], [p_survive_empirical],
                 'ro', markersize=10, label='Empirical'
             )
-            ax.set_title(f'Survival Probability vs Intensity (m={m})')
+            ax.set_title(f'Survival Probability vs Density (m={m})')
         else:  # box
             a = params['box_size']
             k0 = params['box_threshold']
@@ -71,9 +71,9 @@ class PlotUpdater:
                 [λ_current], [p_survive_empirical],
                 'ro', markersize=10, label='Empirical'
             )
-            ax.set_title(f'Survival Probability vs Intensity (a={a}, k₀={k0})')
+            ax.set_title(f'Survival Probability vs Density (a={a}, k₀={k0})')
         
-        ax.set_xlabel('Intensity λ (objects per px²)')
+        ax.set_xlabel('Density λ (objects per px²)')
         ax.set_ylabel('P(survive)')
         ax.legend()
         ax.grid(True, alpha=0.3)
@@ -93,7 +93,7 @@ class PlotUpdater:
             ax: Matplotlib axes to plot on
             theory: Boolean model theory instance
             results: Analysis results dictionary
-            λ_current: Current intensity value
+            λ_current: Current density value
             policy: Active policy ('overlap' or 'box')
             params: Policy-specific parameters
         """
@@ -109,7 +109,7 @@ class PlotUpdater:
             p_survive_empirical = results.get('isolated_objects', 0) / max(1, results['total_objects'])
             
             ax.plot(m_range, survival_curve, 'b-', 
-                   label=f'Theory (λ={λ_current:.6f})', linewidth=2)
+                   label=f'Theory (density λ={λ_current:.6f})', linewidth=2)
             ax.plot(
                 [m_current], [p_survive_empirical],
                 'ro', markersize=10, label='Empirical'

@@ -26,8 +26,8 @@ class PlotsPanel(ttk.Frame):
         
         # Plot 1: Survival probability vs intensity
         self.ax_survival_lambda = self.figure.add_subplot(311)
-        self.ax_survival_lambda.set_title('Survival Probability vs Intensity')
-        self.ax_survival_lambda.set_xlabel('Intensity λ (objects per px²)')
+        self.ax_survival_lambda.set_title('Survival Probability vs Density')
+        self.ax_survival_lambda.set_xlabel('Density λ (objects per px²)')
         self.ax_survival_lambda.set_ylabel('P(survive)')
         self.ax_survival_lambda.grid(True, alpha=0.3)
         
